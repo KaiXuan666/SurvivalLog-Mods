@@ -29,5 +29,13 @@ namespace SurvivalLog.Butler
             ManualLogSource current = logger;
             if (current != null) current.LogError(message);
         }
+
+        internal static void Error(string message, System.Exception exception)
+        {
+            ManualLogSource current = logger;
+            if (current == null) return;
+            current.LogError(message);
+            if (exception != null) current.LogError(exception);
+        }
     }
 }

@@ -18,11 +18,14 @@
   <ItemGroup>
     <Compile Include="SurvivalLogButlerPlugin.cs" />
     <Compile Include="ModLog.cs" />
+    <Compile Include="ButlerSettings.cs" />
     <Compile Include="CharacterEnhancement.cs" />
     <Compile Include="ContainerPicker.cs" />
     <Compile Include="SceneContainerNames.cs" />
     <Compile Include="AutoClassifyNative.cs" />
     <Compile Include="ToolTableRecipePeek.cs" />
+    <Compile Include="ButlerMenu.cs" />
+    <Compile Include="ButlerMenuMessagePatch.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,6 +33,7 @@
     <EmbeddedResource Include="ContainerPickerTabDropBridge.js" LogicalName="ContainerPickerTabDropBridge.js" />
     <EmbeddedResource Include="AutoClassify.js" LogicalName="AutoClassify.js" />
     <EmbeddedResource Include="ToolTableRecipeRightClick.js" LogicalName="ToolTableRecipeRightClick.js" />
+    <EmbeddedResource Include="ButlerMenu.js" LogicalName="ButlerMenu.js" />
   </ItemGroup>
 
   <ItemGroup>

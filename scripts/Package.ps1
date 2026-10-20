@@ -329,6 +329,13 @@ function Disable-VersionChecks([string]$PkgDir, $Manifest) {
             File = 'Launch.ps1'
             Old  = 'foreach($f in $manifest.LaunchFingerprints){if((Hash (SafePath $f.Path)) -ne $f.SHA256){$supported=$false}}'
             New  = 'Write-Host ''[mods] Game build fingerprint check disabled; relying on install state instead.'''
+        },
+        # 上游提示玩家「必须用 Launch.cmd 启动」。本包装好后 Steam 直接启动、双击
+        # SurvivalLog.exe 都能加载（doorstop 已启用），所以改掉这句以免误导。
+        @{
+            File = 'Setup.ps1'
+            Old  = 'Write-Host ''Installed successfully. Start the game through Launch.cmd. First launch generates interop locally using the bundled Unity archive; no component download needed.'''
+            New  = 'Write-Host ''[mods] Installed. Launch the game normally (Steam or SurvivalLog.exe); Launch.cmd is only needed after a game update. First launch generates interop locally using the bundled Unity archive; no component download needed.'''
         }
     )
 
@@ -401,7 +408,22 @@ Survival Butler $Version —— 安装说明
   首次启动游戏时 BepInEx 需要生成 IL2CPP 接口，可能耗时数分钟；
   本次启动通常还不会加载插件，再次启动后才生效。
 
-从旧版升级
+从旧版升级（已经装过本插件的旧版本）
+  按这个顺序做，否则会报 "Installation changed" 而装不上：
+
+    1. 关闭游戏。
+    2. 运行 Uninstall.cmd，卸载旧版本。
+    3. 解压本包，覆盖到游戏根目录。
+    4. 运行 Install.cmd。
+
+  注意：不要跳过第 2 步直接解压新包。安装器按哈希记录判断「这个文件是不是安装时
+  写下的」，而解压会覆盖掉已注入脚本的游戏页面（BackpackUI.html 等），安装器会
+  认为安装被人为改过，从而拒绝继续。
+
+  若已经直接解压了、并且 Install.cmd 报 "Installation changed"：
+  重新运行一次 Uninstall.cmd（它会按备份恢复原文件），再走上面的 1~4。
+
+从旧版升级（装过分开的两个旧插件）
   若之前装过分开的两个插件，先删除下面两个文件，否则会重复 patch：
        BepInEx\plugins\SurvivalLog.CharacterEnhancement.dll
        BepInEx\plugins\SurvivalLog.ContainerPicker.dll
@@ -409,8 +431,24 @@ Survival Butler $Version —— 安装说明
   若之前已装过 HomeButler 官方包，直接解压本包并再次运行 Install.cmd 即可，
   安装器会跳过内容相同的文件。
 
+启动方式
+  装完之后照常启动游戏即可：Steam 里点开始、双击 SurvivalLog.exe 都能加载插件，
+  不需要每次都走 Launch.cmd。
+
+  HomeButler 的 Launch.cmd 是给「游戏更新后页面结构与备份对不上」这类情况用的
+  安全启动开关：它会在开游戏前核对安装状态，必要时先退回原版页面再启动。
+  所以游戏本体更新过、或容器界面出现异常时，仍建议用 Launch.cmd 启动一次。
+
+  · 不用 Launch.cmd 直接启动时，安全模式检查同样生效：若安装状态不完整，
+    游戏会以关掉 mod 的方式启动，而不是带着半套改动进游戏。
+  · 若某次用 Launch.cmd 进过安全模式，游戏目录里的 doorstop_config.ini 会被改成
+    enabled = false，此后直接启动不会加载任何 mod。这时用 Launch.cmd 启动一次
+    （或运行 RestoreMods.cmd）即可恢复。
+
 功能
-  · 人物增强：移动速度 x3、探索暴露度上限 x5。
+  · 人物增强：移动速度与探索暴露度上限倍率可调，在主界面右侧栏的模组面板里
+    可随时开关，改动立即生效并写入 BepInEx\config\local.survivallog.butler.cfg。
+  · 模组面板：主界面（标题菜单）右侧栏底部的齿轮按钮，点开即可调整本插件参数。
   · 容器增强：背包容器下拉选择、拖放目标、自动归类、制作台配方右键。
 
 排查
@@ -475,8 +513,12 @@ Survival Butler $Version —— 增量包安装说明
        BepInEx\plugins\SurvivalLog.ContainerPicker.dll
 
 功能
-  · 人物增强：移动速度 x3、探索暴露度上限 x5。
+  · 人物增强：移动速度与探索暴露度上限倍率可调，在主界面右侧栏的模组面板里
+    可随时开关，改动立即生效并写入 BepInEx\config\local.survivallog.butler.cfg。
+  · 模组面板：主界面（标题菜单）右侧栏底部的齿轮按钮，点开即可调整本插件参数。
   · 容器增强：背包容器下拉选择、拖放目标、自动归类、制作台配方右键。
+
+  启动方式同上：Steam 直接启动即可，不需要每次走 Launch.cmd。
 
 排查
   查看 BepInEx\LogOutput.log，搜索 "Survival Butler"。
@@ -531,6 +573,53 @@ else {
 
     $manifest.PackageFiles = @(@($manifest.PackageFiles) | Where-Object { $_.Path -ne $relSource }) +
         [pscustomobject]@{ Path = $relSource; SHA256 = $dllHash }
+
+    # --- 升级白名单：允许覆盖「旧版本装下的同一个插件」---
+    # 上游 Setup.ps1 对 payload 里的文件做了冲突保护：只有目标文件的哈希出现在
+    # manifest.UpgradeHashes[目标路径] 里，才允许覆盖，否则报
+    # "Existing file conflicts with this bundle" 并整体放弃安装。
+    # 于是不做这一步的话，任何「装过旧版 → 装新版」的用户都会装不上。
+    # 这里把旧版本发布过的哈希累积进白名单（含本次导入的上一版哈希）。
+    $upgradeTarget = $relTarget
+    $allowed = New-Object System.Collections.Generic.List[string]
+
+    $existingEntry = $manifest.UpgradeHashes.PSObject.Properties[$upgradeTarget]
+    if ($existingEntry -and $existingEntry.Value) {
+        foreach ($h in @($existingEntry.Value)) { if ($h) { $allowed.Add([string]$h) } }
+    }
+
+    # 本仓库自己发布过的版本：随包一起改，每次打包由发布者把上一版的哈希填进
+    # scripts/SurvivalLog.Butler.known-hashes.txt（一行一个 SHA-256）。
+    $knownPath = Join-Path $repoRoot "scripts\SurvivalLog.Butler.known-hashes.txt"
+    if (Test-Path -LiteralPath $knownPath) {
+        foreach ($line in (Get-Content -LiteralPath $knownPath -Encoding ASCII)) {
+            $h = $line.Trim().ToUpperInvariant()
+            if ($h -match '^[0-9A-F]{64}$' -and -not $allowed.Contains($h)) { $allowed.Add($h) }
+        }
+    }
+
+    # 当前游戏目录里已装的那个 DLL：本次产出的若与它不同，说明用户在升级，必须放行。
+    if ($GameDir) {
+        $installedPlugins = Join-Path $GameDir "BepInEx\plugins\SurvivalLog.Butler.dll"
+        if (Test-Path -LiteralPath $installedPlugins) {
+            $installedHash = Get-Sha256 -Path $installedPlugins
+            if ($installedHash -and $installedHash -ne $dllHash -and -not $allowed.Contains($installedHash)) {
+                $allowed.Add($installedHash)
+                Write-Host "升级白名单：已放行游戏目录中的旧版插件 $($installedHash.Substring(0,12))…" -ForegroundColor Cyan
+            }
+        }
+    }
+
+    # 本次产出自身的哈希也要在表里：重装同一版本时安装器会跳过（哈希相同），
+    # 但保留它能让「先卸载后重装」这类路径不至于因缺项报错。
+    if (-not $allowed.Contains($dllHash)) { $allowed.Add($dllHash) }
+
+    $hashTable = [ordered]@{}
+    if ($manifest.UpgradeHashes) {
+        foreach ($p in $manifest.UpgradeHashes.PSObject.Properties) { $hashTable[$p.Name] = @($p.Value) }
+    }
+    $hashTable[$upgradeTarget] = @($allowed)
+    $manifest | Add-Member -NotePropertyName UpgradeHashes -NotePropertyValue ([pscustomobject]$hashTable) -Force
 
     [System.IO.File]::WriteAllText($mPath, ($manifest | ConvertTo-Json -Depth 20), $utf8NoBom)
 
@@ -752,6 +841,21 @@ try {
         $pf = @($m.PackageFiles) | Where-Object { $_.Path -eq "payload/BepInEx/plugins/SurvivalLog.Butler.dll" }
         if (-not $pf) { $fail.Add("manifest 的 PackageFiles 未登记插件") }
         elseif ($pf.SHA256.ToUpperInvariant() -ne $dllHash) { $fail.Add("manifest 记录的 DLL 哈希与实际不符") }
+
+        # 升级白名单必须覆盖本次的 DLL，也要覆盖已知的旧版本，否则老用户装不上。
+        $uh = $m.UpgradeHashes.PSObject.Properties["BepInEx\plugins\SurvivalLog.Butler.dll"]
+        if (-not $uh -or -not @($uh.Value).Contains($dllHash)) {
+            $fail.Add("manifest 的 UpgradeHashes 未包含本次 DLL 哈希（旧版本无法覆盖升级）")
+        }
+        $knownPath = Join-Path $repoRoot "scripts\SurvivalLog.Butler.known-hashes.txt"
+        if (Test-Path -LiteralPath $knownPath) {
+            foreach ($line in (Get-Content -LiteralPath $knownPath -Encoding ASCII)) {
+                $h = $line.Trim().ToUpperInvariant()
+                if ($h -match '^[0-9A-F]{64}$' -and -not @($uh.Value).Contains($h)) {
+                    $fail.Add("manifest 的 UpgradeHashes 漏掉了已发布版本 $($h.Substring(0,12))…（升级会被判为文件冲突）")
+                }
+            }
+        }
 
         foreach ($item in $m.PackageFiles) {
             $abs = Join-Path $pkgDir.FullName ($item.Path -replace '/', '\')

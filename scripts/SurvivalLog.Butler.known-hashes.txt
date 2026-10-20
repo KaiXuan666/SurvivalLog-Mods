@@ -1,0 +1,10 @@
+# SurvivalLog.Butler.dll 已发布版本的 SHA-256（每行一个，大写）。
+#
+# 用途：上游 Setup.ps1 对 payload 做冲突保护——只有目标文件的哈希出现在
+# manifest.UpgradeHashes 里才允许覆盖，否则报 "Existing file conflicts"。
+# 每次发布新版本前，把「上一版已装到玩家机器上的那个 DLL 哈希」追加到这里，
+# 打包时会自动并入 UpgradeHashes，老用户才能顺利覆盖升级。
+#
+# 首个公开发布版本之前的构建，按时间从旧到新排列：
+2FCB7B7A971C99634FBF86598616E12CD7BB59FD2BDEF5F100FF53535F4F1A7D
+6ADF7CBA506E9A7EADB530BBAC9D4D7636F76317135F9F66CD2CDD9DB58408C3
