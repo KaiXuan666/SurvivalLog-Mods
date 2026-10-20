@@ -24,17 +24,11 @@ namespace SurvivalLog.Mods
         private static bool ready;
         private static bool missedLogged;
         private static float nextAttempt;
+        private static MethodInfo findMethod;
         private static FieldInfo catalogField;
-        private static FieldInfo loadedIdsField;
         private static PropertyInfo labelsProperty;
         private static PropertyInfo nameProperty;
         private static PropertyInfo rankProperty;
-        private static PropertyInfo furnitureProperty;
-
-        internal static bool Ready
-        {
-            get { Ensure(); return ready; }
-        }
 
         private static void Ensure()
         {
@@ -60,18 +54,18 @@ namespace SurvivalLog.Mods
                 Type catalogType = assembly.GetType("ContainerCatalog");
                 if (catalogType == null) return;
 
-                catalogField = AccessTools.Field(catalogType, "data");
-                loadedIdsField = AccessTools.Field(catalogType, "loadedIds");
-                if (catalogField == null || loadedIdsField == null) return;
-
-                labelsProperty = catalogField.FieldType.GetProperty("Labels");
-                MethodInfo find = AccessTools.Method(catalogType, "Find");
-                Type labelType = find == null ? null : find.ReturnType;
-                if (labelsProperty == null || labelType == null) return;
-
+                // 直接复用 HomeButler 自己的查找逻辑：它已经处理了
+                // 「运行时实例 id -> 存档稳定 id」的映射以及家具类型校验。
+                findMethod = AccessTools.Method(catalogType, "Find", new[] { typeof(long), typeof(int) });
+                if (findMethod == null) return;
+                Type labelType = findMethod.ReturnType;
                 nameProperty = labelType.GetProperty("Name");
                 rankProperty = labelType.GetProperty("Rank");
-                furnitureProperty = labelType.GetProperty("Furniture");
+                // 直查路径：名称栏记录的 id 本身可能就是存档稳定 id。
+                catalogField = AccessTools.Field(catalogType, "data");
+                labelsProperty = catalogField == null
+                    ? null
+                    : catalogField.FieldType.GetProperty("Labels");
                 ready = nameProperty != null;
             }
             catch (Exception ex)
@@ -90,40 +84,11 @@ namespace SurvivalLog.Mods
             if (!ready) { reason = "container catalog unavailable"; return false; }
             try
             {
-                object data = catalogField.GetValue(null);
-                if (data == null) { reason = "catalog not loaded"; return false; }
-                IDictionary labels = labelsProperty.GetValue(data) as IDictionary;
-                if (labels == null || labels.Count == 0) { reason = "catalog has no labels"; return false; }
-
-                // 目录按存档内的稳定实例 id 存；场景里的家具用运行时实例 id，
-                // loadedIds 就是这两者之间的映射（BaseAgent.LoadGame 时写入）。
-                long stable = owner;
-                if (loadedIdsField.GetValue(null) is IDictionary map && map.Contains(owner))
-                {
-                    long mapped = Convert.ToInt64(map[owner]);
-                    if (mapped != 0) stable = mapped;
-                }
-
-                object label = null;
-                string key = stable.ToString();
-                if (labels.Contains(key)) label = labels[key];
-                else if (stable != owner && labels.Contains(owner.ToString())) label = labels[owner.ToString()];
-                if (label == null) { reason = "no label for owner " + owner + " (stable " + stable + ")"; return false; }
+                object label = findMethod.Invoke(null, new object[] { owner, config });
+                if (label == null) { reason = "no label for owner " + owner + " (config " + config + ")"; return false; }
 
                 string name = nameProperty.GetValue(label) as string;
                 if (string.IsNullOrWhiteSpace(name)) { reason = "label is empty"; return false; }
-
-                if (furnitureProperty != null)
-                {
-                    object stored = furnitureProperty.GetValue(label);
-                    int storedConfig = stored == null ? config : Convert.ToInt32(stored);
-                    if (storedConfig != config)
-                    {
-                        // 同一实例 id 换了家具类型时不能沿用旧名。
-                        reason = "label belongs to config " + storedConfig + ", scene has " + config;
-                        return false;
-                    }
-                }
 
                 object rank = rankProperty == null ? null : rankProperty.GetValue(label);
                 display = rank is int value ? "[" + value + "] " + name : name;
@@ -131,9 +96,35 @@ namespace SurvivalLog.Mods
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = (ex.InnerException ?? ex).Message;
                 return false;
             }
+        }
+
+        // 兜底：直接把名称栏记录的 id 当存档稳定 id 去目录里查（不做家具类型校验）。
+        internal static bool TryResolveStable(long stableId, out string display)
+        {
+            display = null;
+            if (stableId == 0) return false;
+            Ensure();
+            if (!ready || catalogField == null || labelsProperty == null) return false;
+            try
+            {
+                object data = catalogField.GetValue(null);
+                if (data == null) return false;
+                IDictionary labels = labelsProperty.GetValue(data) as IDictionary;
+                if (labels == null) return false;
+                object label = labels[stableId.ToString()];
+                if (label == null) return false;
+
+                string name = nameProperty.GetValue(label) as string;
+                if (string.IsNullOrWhiteSpace(name)) return false;
+
+                object rank = rankProperty == null ? null : rankProperty.GetValue(label);
+                display = rank is int value ? "[" + value + "] " + name : name;
+                return true;
+            }
+            catch { return false; }
         }
     }
 
@@ -141,8 +132,6 @@ namespace SurvivalLog.Mods
     {
         private static readonly HashSet<string> logged = new HashSet<string>();
         private static readonly Dictionary<IntPtr, BarState> states = new Dictionary<IntPtr, BarState>();
-        private static PropertyInfo showInstanceId;
-        private static bool showInstanceIdResolved;
         private static bool installTried;
         private static int missLogs;
 
@@ -161,6 +150,8 @@ namespace SurvivalLog.Mods
                 nameof(OnNameAssigned), new[] { typeof(string) });
             TryPatch(harmony, log, typeof(FurnitureHeadBar), "ApplyNameWithSearchCount",
                 nameof(OnNameComposed), Type.EmptyTypes);
+            // OnUpdate 实际声明在 BaseHeadBar 上，单位血条也会走到这里；
+            // 处理时必须先确认实例真的是家具名称栏，否则字段偏移会读错对象。
             TryPatch(harmony, log, typeof(FurnitureHeadBar), "OnUpdate",
                 nameof(OnBarUpdated), new[] { typeof(float) });
         }
@@ -178,7 +169,8 @@ namespace SurvivalLog.Mods
                 }
                 MethodInfo postfix = AccessTools.Method(typeof(SceneContainerNames), postfixName);
                 harmony.Patch(target, postfix: new HarmonyMethod(postfix));
-                log.LogInfo("[SceneNames] Hooked " + type.Name + "." + name + ".");
+                log.LogInfo("[SceneNames] Hooked " + type.Name + "." + name
+                    + (target.DeclaringType == type ? "." : " (declared on " + target.DeclaringType.Name + ")."));
             }
             catch (Exception ex)
             {
@@ -198,51 +190,72 @@ namespace SurvivalLog.Mods
             Apply(__instance, null, "ApplyName");
         }
 
-        private static void OnBarUpdated(FurnitureHeadBar __instance, float deltaTime)
+        private static void OnBarUpdated(BaseHeadBar __instance, float deltaTime)
         {
             if (__instance == null) return;
-            // 名称栏每帧都会重排；缓存命中时只回写文本（不碰目录），
-            // 每 16 帧重新解析一次，改名后最多 0.3 秒就跟上。
-            IntPtr key = __instance.Pointer;
-            int frame = Time.frameCount;
+            FurnitureHeadBar bar;
+            try { bar = __instance.TryCast<FurnitureHeadBar>(); }
+            catch { return; }
+            if (bar == null) return;
+
+            // 名称栏每帧都会重排；缓存命中时只回写文本（不碰目录与 Agent 查询）。
             BarState state;
-            if (states.TryGetValue(key, out state) && frame < state.NextResolveFrame)
+            if (states.TryGetValue(bar.Pointer, out state) && Time.frameCount < state.NextResolveFrame)
             {
-                if (state.Display != null) Write(__instance, state.Display, null);
+                if (state.Display != null) Write(bar, state.Display, null);
                 return;
             }
-            Apply(__instance, null, "OnUpdate");
+            Apply(bar, null, "OnUpdate");
         }
 
         private static void Apply(FurnitureHeadBar bar, string gameName, string source)
         {
             if (bar == null) return;
             IntPtr key = bar.Pointer;
+            int frame = Time.frameCount;
+            BarState previous;
+            states.TryGetValue(key, out previous);
             try
             {
-                Furniture furniture = FindFurniture(bar);
-                if (furniture == null)
+                long owner;
+                int config;
+                string trace;
+                string display = null;
+                string reason = null;
+                bool haveFurniture = TryResolveOwner(bar, previous, out owner, out config, out trace);
+                bool haveLabel = haveFurniture
+                    && ContainerLabelStore.TryResolve(owner, config, out display, out reason);
+
+                // 兜底：家具没认出来、或按家具查不到名字时，直接拿名称栏记录的 id
+                // 当存档稳定 id 去目录里查一次。命中说明这条 id 就是存档 id。
+                if (!haveLabel)
                 {
-                    states[key] = new BarState { NextResolveFrame = Time.frameCount + 120 };
-                    LogOnce(source + ":no-furniture", "[SceneNames] " + source + ": head bar target has no Furniture component.");
-                    return;
+                    long direct = BarInstanceId(bar);
+                    if (direct != 0 && (!haveFurniture || direct != owner)
+                        && ContainerLabelStore.TryResolveStable(direct, out display))
+                    {
+                        haveLabel = true;
+                        LogOnce("stable:" + direct, "[SceneNames] " + source
+                            + ": matched stable id " + direct + " (owner " + (haveFurniture ? owner.ToString() : "unknown") + ")");
+                    }
                 }
 
-                long owner = ((BaseEntity)furniture).InstanceId;
-                int config = furniture.AgentConfigId;
-                BarState previous;
-                states.TryGetValue(key, out previous);
-                if (!ContainerLabelStore.TryResolve(owner, config, out string display, out string reason))
+                if (!haveLabel)
                 {
                     // 名称被清空（留空恢复）时把名称栏还原成游戏原名。
                     if (previous != null && !string.IsNullOrEmpty(previous.Display)) Restore(bar, previous);
                     // 绝大多数家具本来就没有自定义名，只记前几条未命中，避免刷日志。
-                    states[key] = new BarState { NextResolveFrame = Time.frameCount + 120 };
-                    if (missLogs < 5)
+                    states[key] = new BarState
+                    {
+                        Owner = haveFurniture ? owner : 0,
+                        Config = config,
+                        NextResolveFrame = frame + (haveFurniture ? 60 : 300)
+                    };
+                    if (missLogs < 6)
                     {
                         missLogs++;
-                        LogOnce(source + ":miss:" + owner, "[SceneNames] " + source + ": owner=" + owner
-                            + " config=" + config + " -> " + reason);
+                        LogOnce("miss:" + key, "[SceneNames] " + source
+                            + (haveFurniture ? ": owner=" + owner + " config=" + config + " -> " + reason : ": " + trace));
                     }
                     return;
                 }
@@ -255,24 +268,194 @@ namespace SurvivalLog.Mods
 
                 states[key] = new BarState
                 {
-                    Owner = owner,
+                    Owner = haveFurniture ? owner : 0,
+                    Config = config,
                     Display = display,
                     Original = original,
-                    NextResolveFrame = Time.frameCount + 16
+                    NextResolveFrame = frame + (haveFurniture ? 16 : 60)
                 };
                 if (states.Count > 512) states.Clear();
 
                 string before = bar.Text_Name == null ? null : bar.Text_Name.text;
                 Write(bar, display, gameName);
 
-                LogOnce("hit:" + owner, "[SceneNames] " + source + ": owner=" + owner + " config=" + config
-                    + " -> \"" + display + "\" (" + before + " -> " + (bar.Text_Name == null ? "" : bar.Text_Name.text) + ")");
+                LogOnce("hit:" + key, "[SceneNames] " + source + ": owner=" + (haveFurniture ? owner.ToString() : "?")
+                    + " config=" + config + " -> \"" + display + "\" (" + before + " -> "
+                    + (bar.Text_Name == null ? "" : bar.Text_Name.text) + ")");
             }
             catch (Exception ex)
             {
-                states[key] = new BarState { NextResolveFrame = Time.frameCount + 120 };
+                states[key] = new BarState { NextResolveFrame = frame + 300 };
                 LogOnce("error:" + source, "[SceneNames] " + source + " failed: " + ex);
             }
+        }
+
+        // 名称栏只记着「展示用的实例 id」和一个 Transform。
+        // Furniture 是纯逻辑对象（Furniture : BaseAgent），不是 Unity 组件，
+        // 所以不能靠 GetComponent 拿，只能从 AgentManager 里按 id 反查。
+        private static bool TryResolveOwner(FurnitureHeadBar bar, BarState cached,
+            out long owner, out int config, out string trace)
+        {
+            owner = 0;
+            config = 0;
+            trace = null;
+
+            AgentManager agents = CurrentAgents();
+            if (agents == null) { trace = "agent manager unavailable"; return false; }
+
+            // 1) 已经解析成功过：按实例 id 直接取，省掉全量扫描。
+            if (cached != null && cached.Owner != 0)
+            {
+                Furniture known = LookupFurniture(agents, cached.Owner);
+                if (known != null)
+                {
+                    owner = cached.Owner;
+                    config = known.AgentConfigId;
+                    return true;
+                }
+            }
+
+            long showId = 0;
+            Transform target = null;
+            try
+            {
+                showId = bar._showInstanceId_k__BackingField;
+                target = bar.Target;
+            }
+            catch { }
+
+            Furniture found = null;
+            if (showId != 0)
+            {
+                found = LookupFurniture(agents, showId);
+                // InstanceId 与 ShowInstanceId 不是同一个字段，兜底扫一遍两者。
+                if (found == null) found = ScanById(agents, showId);
+            }
+            if (found == null && target != null) found = ScanByTransform(agents, target);
+
+            if (found == null)
+            {
+                // 失败时把三条线索一次打全，方便下轮直接定位，而不是反复试。
+                trace = "no furniture for bar: showInstanceId=" + showId
+                    + " target=" + (target == null ? "null" : target.name)
+                    + " agents=" + AgentCount(agents)
+                    + " samples=" + SampleAgents(agents);
+                return false;
+            }
+
+            owner = found.InstanceId;
+            config = found.AgentConfigId;
+            if (owner == 0) { trace = "furniture has zero instance id"; return false; }
+            return true;
+        }
+
+        private static AgentManager CurrentAgents()
+        {
+            BattleLogicWorld world = BaseSingleton<BattleLogicWorld>._Instance;
+            return world == null ? null : world._AgentManager;
+        }
+
+        // 名称栏创建时记录下来的展示实例 id（可能是运行时实例 id，也可能是存档稳定 id）。
+        private static long BarInstanceId(BaseHeadBar bar)
+        {
+            try { return bar._showInstanceId_k__BackingField; }
+            catch { return 0; }
+        }
+
+        private static Furniture LookupFurniture(AgentManager agents, long id)
+        {
+            try
+            {
+                BaseAgent agent = agents.GetAgent(id);
+                return agent == null ? null : agent.TryCast<Furniture>();
+            }
+            catch { return null; }
+        }
+
+        private static Furniture ScanById(AgentManager agents, long id)
+        {
+            try
+            {
+                var all = agents.GetAllAgent();
+                if (all == null) return null;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    BaseAgent agent = all[i];
+                    if (agent == null) continue;
+                    if (agent.InstanceId != id && agent.ShowInstanceId != id) continue;
+                    Furniture furniture = agent.TryCast<Furniture>();
+                    if (furniture != null) return furniture;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // 名称栏的 Target 可能挂在模型子节点上，所以比较整条父链。
+        private static Furniture ScanByTransform(AgentManager agents, Transform target)
+        {
+            try
+            {
+                HashSet<IntPtr> chain = new HashSet<IntPtr>();
+                Transform node = target;
+                for (int depth = 0; depth < 12 && node != null; depth++)
+                {
+                    chain.Add(node.Pointer);
+                    node = node.parent;
+                }
+
+                var all = agents.GetAllAgent();
+                if (all == null) return null;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    BaseAgent agent = all[i];
+                    if (agent == null) continue;
+                    TransformComponent motion = agent._transformComponent;
+                    Transform own = motion == null ? null : motion._transform_k__BackingField;
+                    if (own == null || !chain.Contains(own.Pointer)) continue;
+                    Furniture furniture = agent.TryCast<Furniture>();
+                    if (furniture != null) return furniture;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string AgentCount(AgentManager agents)
+        {
+            try
+            {
+                var all = agents.GetAllAgent();
+                return all == null ? "?" : all.Count.ToString();
+            }
+            catch { return "?"; }
+        }
+
+        private static string SampleAgents(AgentManager agents)
+        {
+            try
+            {
+                var all = agents.GetAllAgent();
+                if (all == null) return "-";
+                System.Text.StringBuilder text = new System.Text.StringBuilder();
+                int shown = 0;
+                for (int i = 0; i < all.Count && shown < 4; i++)
+                {
+                    BaseAgent agent = all[i];
+                    if (agent == null) continue;
+                    Furniture probe = agent.TryCast<Furniture>();
+                    if (probe == null) continue;
+                    TransformComponent motion = agent._transformComponent;
+                    Transform own = motion == null ? null : motion._transform_k__BackingField;
+                    if (shown > 0) text.Append("; ");
+                    text.Append(probe.AgentConfigId).Append('@').Append(probe.InstanceId)
+                        .Append('/').Append(agent.ShowInstanceId)
+                        .Append(" t=").Append(own == null ? "null" : own.name);
+                    shown++;
+                }
+                return shown == 0 ? "-" : text.ToString();
+            }
+            catch { return "?"; }
         }
 
         // 只负责把名称写进名称栏；gameName 是游戏原本要显示的名字，
@@ -314,54 +497,10 @@ namespace SurvivalLog.Mods
         private sealed class BarState
         {
             internal long Owner;
+            internal int Config;
             internal string Display;
             internal string Original;
             internal int NextResolveFrame;
-        }
-
-        private static Furniture FindFurniture(FurnitureHeadBar bar)
-        {
-            Transform target = bar.Target;
-            if (target != null)
-            {
-                Transform node = target;
-                for (int depth = 0; depth < 8 && node != null; depth++)
-                {
-                    Furniture direct = node.GetComponent<Furniture>();
-                    if (direct != null) return direct;
-                    node = node.parent;
-                }
-                int children = target.childCount;
-                for (int i = 0; i < children; i++)
-                {
-                    Furniture nested = target.GetChild(i).GetComponent<Furniture>();
-                    if (nested != null) return nested;
-                }
-            }
-
-            // 名称栏挂在模型子节点上时，退回到它记录的实例 id 去逻辑层取家具。
-            long id = ShowInstanceId(bar);
-            if (id == 0) return null;
-            BattleLogicWorld world = BaseSingleton<BattleLogicWorld>._Instance;
-            AgentManager agents = world == null ? null : world._AgentManager;
-            BaseAgent agent = agents == null ? null : agents.GetAgent(id);
-            return agent == null ? null : ((Il2CppObjectBase)(object)agent).TryCast<Furniture>();
-        }
-
-        private static long ShowInstanceId(BaseHeadBar bar)
-        {
-            try
-            {
-                if (!showInstanceIdResolved)
-                {
-                    showInstanceIdResolved = true;
-                    showInstanceId = AccessTools.Property(typeof(BaseHeadBar), "showInstanceId");
-                }
-                if (showInstanceId == null) return 0;
-                object value = showInstanceId.GetValue(bar);
-                return value == null ? 0 : Convert.ToInt64(value);
-            }
-            catch { return 0; }
         }
 
         private static void LogOnce(string key, string message)
