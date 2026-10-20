@@ -7,10 +7,21 @@
   "originalAuthor": "lingxiangtingsheng",
   "originalPage": "https://www.nexusmods.com/survivallog/mods/4",
   "packageMaintainer": "lingbaicat",
-  "authorizedBy": ["lingxiangtingsheng", "lingbaicat"],
+  "authorizedBy": [
+    "lingxiangtingsheng",
+    "lingbaicat"
+  ],
   "authorizationConfirmedAt": "2026-10-20",
   "redistribution": "源码经权利人授权收录于 third-party/homebutler/；编译产物不随仓库分发，请从上游获取。原始条款见 licenses/HomeButler-LICENSE.md，授权依据见 licenses/HomeButler-AUTHORIZATION.md。",
   "sourceIncluded": "third-party/homebutler/source",
+  "offlinePackage": {
+    "fileName": "SurvivalLog-HomeButler-2.0.0-Game1.1.18599-win-x64-OFFLINE.zip",
+    "size": 37041703,
+    "sha256": "EAC49C7A66B115C8355CA7D14D1E7923F244D3868EBC1CBBA83A59630839B6AF",
+    "url": "https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat/releases/download/v2.0.0/SurvivalLog-HomeButler-2.0.0-Game1.1.18599-win-x64-OFFLINE.zip",
+    "checksumSource": "https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat/releases/download/v2.0.0/SHA256SUMS.txt",
+    "$comment": "Release 完整包（-full）以此为基底，内含 BepInEx 6 IL2CPP、Doorstop、.NET 运行时与 Unity 基础库；scripts/Package.ps1 将其原样解压后把本插件并入 payload 与 manifest，不改动上游安装/卸载逻辑。"
+  },
   "requiredPluginGuid": "local.survivallog.homeaccess",
   "files": [
     {

@@ -54,7 +54,18 @@ BepInEx\interop\Il2Cppmscorlib.dll    6 MB
 
 游戏装在别处时，建议在 **Settings → Secrets and variables → Actions → Variables** 新建仓库变量 `SURVIVALLOG_GAME_DIR`，一次配好长期有效。
 
-另外要确保 runner 账号能读到 `BepInEx\plugins\` 下的 5 个 `BaseButler*.dll`——打包会把它们一并放进 zip。
+## 基底包
+
+完整包需要 HomeButler 官方离线整合包作为基底（内含 BepInEx 6、Doorstop、.NET 运行时、Unity 基础库）。工作流按以下顺序获取，取第一个 SHA-256 匹配的：
+
+1. `workflow_dispatch` 的 `base_package` 输入
+2. 环境变量 `HOMEBUTLER_BASE_ZIP`
+3. `$RUNNER_TEMP\HomeButler-base.zip`（上次下载的缓存）
+4. 按 `HOMEBUTLER_BASE_URL` 下载（默认 v2.0.0，37 MB）
+
+校验值是工作流 `env.HOMEBUTLER_BASE_SHA256`，与上游 release 附带的 `SHA256SUMS.txt` 一致。上游发新版本时需要同时更新 URL 与校验值，否则下载会因哈希不符而中止——这是刻意的，避免悄悄换基底。
+
+runner 上不需要预装 HomeButler，也不需要保留那 5 个 `BaseButler*.dll`；它们从基底包里取。
 
 ## 发版流程
 
@@ -82,40 +93,77 @@ Actions → Package & Release → Run workflow
 
 ## zip 内容
 
-解压到游戏根目录即可生效（`BepInEx/` 直接对应游戏下的同名目录）：
+产物有两种，都对应游戏根目录：
+
+**完整包** `SurvivalLog.Mods-<版本>-full.zip`（约 35 MB，285 个文件）
 
 ```
 安装说明.txt
-BepInEx/
-  plugins/
-    SurvivalLog.Mods.dll
-    BaseButler.dll
-    BaseButler.HomeAccess.dll
-    BaseButler.ContainerNavigation.dll
-    BaseButler.ContainerInlineEditor.dll
-    BaseButler.NativeCompatibility.dll
-licenses/
-  HomeButler-LICENSE.md
-  HomeButler-AUTHORIZATION.md
+先读我.txt
+Install.cmd / Uninstall.cmd / Check.cmd / Launch.cmd / ...
+release.json
+HomeButler-2.0.0-Package/
+  manifest.json          ← 已登记本插件
+  payload/
+    winhttp.dll          ← Doorstop 注入器
+    doorstop_config.ini
+    .doorstop_version
+    dotnet/              ← .NET 6 运行时（hostpolicy、coreclr、System.*）
+    BepInEx/core/        ← BepInEx 6 IL2CPP 加载器
+    BepInEx/unity-libs/  ← Unity 6000.2.7 基础库（生成 interop 用）
+    BepInEx/plugins/
+      SurvivalLog.Mods.dll        ← 本插件
+      BaseButler*.dll ×5          ← HomeButler
 ```
+
+用户解压到游戏根目录，运行 `Install.cmd`。安装器（上游 `Setup.ps1`）会：
+
+1. 用 `manifest.json` 的 `PackageFiles` 逐项校验 SHA-256；
+2. 按 `Payload` 把文件复制到游戏根目录，记录每个文件的安装前状态；
+3. 调用 `PanelLayout.Transform` 把容器脚本注入 10 个游戏页面；
+4. 写 `BepInEx.cfg` 的 `[IL2CPP]` 段。
+
+本插件只是往 `payload/BepInEx/plugins/` 里加了一个 DLL，并在 `Payload`、`PackageFiles` 各补一条记录。上游的安装、卸载、恢复逻辑完全复用，没有改动 `Setup.ps1`。
+
+**增量包** `SurvivalLog.Mods-<版本>-lite.zip`（几十 KB）
+
+```
+安装说明.txt
+BepInEx/plugins/SurvivalLog.Mods.dll
+licenses/
+```
+
+只含插件本体，要求游戏目录里已装好 HomeButler 2.0.0。
+
+## 自检
+
+`Package.ps1` 打包后会自动校验，任一项不过就退出码 1，不会产出可发布的包：
+
+- zip 条目全部使用正斜杠、无路径穿越、中文条目名正确；
+- 完整包必需文件齐全（Doorstop、BepInEx core、dotnet、unity-libs、5 个 BaseButler）；
+- `manifest.json` 的 256 条 `PackageFiles` 与实际文件哈希逐一比对；
+- `Payload` 与 `PackageFiles` 都登记了本插件，且记录的哈希与构建产物一致。
 
 ## 不想用 runner 的替代方案
 
 本机执行同样的脚本即可，CI 只是把它自动化：
 
 ```powershell
-.\scripts\Package.ps1                      # 构建 + 打包到 dist\
-.\scripts\Package.ps1 -SkipBuild           # 复用已有 DLL
-.\scripts\Package.ps1 -NoHomeButler        # 不捆绑前置，产物体积更小
+.\scripts\Package.ps1                       # 完整包（自动查找基底）
+.\scripts\Package.ps1 -BasePackage "D:\...\SurvivalLog-HomeButler-2.0.0-...-OFFLINE.zip"
+.\scripts\Package.ps1 -SkipBuild            # 复用已有 DLL，只重新组装
+.\scripts\Package.ps1 -Lite                 # 增量包
 ```
 
-然后把 `dist\SurvivalLog.Mods-<版本>.zip` 手动拖到 Release 资源里。工作流调用的是同一个脚本，两条路径产物一致。
+基底包默认在这些位置查找 `SurvivalLog-HomeButler-*-OFFLINE.zip`：`%USERPROFILE%\Downloads`、`%USERPROFILE%\Desktop`、`D:\360极速浏览器X下载`、`C:\Users\Public\Downloads`。也可以用 `-BaseSearchDirs` 指定。
+
+然后把 `dist\*.zip` 手动拖到 Release 资源里。工作流调用的是同一个脚本，两条路径产物一致。
 
 ## 脚本说明
 
 | 脚本 | 作用 |
 | --- | --- |
 | `scripts/Build.ps1` | 查找可用的 .NET SDK（会校验该 dotnet 确实带 SDK），构建 Release |
-| `scripts/Package.ps1` | 构建 + 组装暂存目录 + 压缩 zip，并向 `GITHUB_OUTPUT` 写入路径与哈希 |
+| `scripts/Package.ps1` | 构建 + 组装暂存目录 + 压缩 + 自检，并向 `GITHUB_OUTPUT` 写入路径与哈希 |
 | `scripts/Install.ps1` | 直接安装到本机游戏目录（检测到游戏在运行会中止） |
 | `scripts/Get-HomeButler.ps1` | 按清单核对 HomeButler 组件是否完整 |

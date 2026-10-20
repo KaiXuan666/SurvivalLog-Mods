@@ -1,12 +1,17 @@
 name: Package & Release
 
-# 构建并打包成「解压到游戏目录即可用」的 zip。
+# 构建并打包成「解压到游戏目录 + 运行 Install.cmd 即可用」的 zip。
 #
 # 为什么必须用自托管 runner：
 #   编译需要游戏本机生成的 BepInEx\interop（HotUpdate.dll 34MB、Il2Cppmscorlib.dll 6MB）。
 #   这些是 IL2CPP 从游戏本体生成的程序集，属于游戏版权文件，不能提交到仓库，
 #   也无法在 GitHub 托管的 runner 上获得。因此本工作流必须在已安装游戏的 Windows
 #   机器上运行（注册一次 self-hosted runner 即可，见 docs/BUILD-CI.md）。
+#
+# 基底包（HomeButler 官方离线整合包）：
+#   插件运行需要 BepInEx 6 (IL2CPP)、Doorstop、.NET 运行时与 Unity 基础库，
+#   这些由上游 HomeButler 离线包提供。工作流会下载它并按 SHA-256 校验，
+#   然后把本插件并入其 payload 与 manifest，产出真正自包含的安装包。
 #
 # 触发方式：
 #   1. 推送 v* 标签  → 构建、打包、创建 Release 并附上 zip
@@ -26,6 +31,10 @@ on:
         description: "游戏安装目录（留空则用 runner 上的 SURVIVALLOG_GAME_DIR 或默认路径）"
         required: false
         type: string
+      base_package:
+        description: "已有的 HomeButler 离线包路径（留空则自动下载）"
+        required: false
+        type: string
       publish_release:
         description: "构建后创建 GitHub Release"
         required: false
@@ -41,13 +50,15 @@ concurrency:
 
 env:
   DEFAULT_GAME_DIR: 'F:\platform\Steam\steamapps\common\Survival Log'
+  HOMEBUTLER_BASE_URL: 'https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat/releases/download/v2.0.0/SurvivalLog-HomeButler-2.0.0-Game1.1.18599-win-x64-OFFLINE.zip'
+  HOMEBUTLER_BASE_SHA256: 'EAC49C7A66B115C8355CA7D14D1E7923F244D3868EBC1CBBA83A59630839B6AF'
 
 jobs:
   package:
     name: Build and package
     # 默认标签：自托管 + Windows + x64。runner 未就绪时任务会排队等待，不会失败。
     runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -108,12 +119,63 @@ jobs:
           Write-Host "版本: $version"
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "version=$version`n", $utf8)
 
-      - name: 构建并打包
+      - name: 获取 HomeButler 基底包
+        id: base
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          $expected = $env:HOMEBUTLER_BASE_SHA256.ToUpperInvariant()
+
+          function Test-Base([string]$p) {
+            if (-not $p -or -not (Test-Path -LiteralPath $p)) { return $false }
+            $h = (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToUpperInvariant()
+            return ($h -eq $expected)
+          }
+
+          $candidates = @(
+            '${{ inputs.base_package }}',
+            $env:HOMEBUTLER_BASE_ZIP,
+            (Join-Path $env:RUNNER_TEMP 'HomeButler-base.zip')
+          ) | Where-Object { $_ -and $_.Trim() }
+
+          $chosen = $null
+          foreach ($c in $candidates) { if (Test-Base $c) { $chosen = $c; break } }
+
+          if (-not $chosen) {
+            $target = Join-Path $env:RUNNER_TEMP 'HomeButler-base.zip'
+            Write-Host "下载基底包: $env:HOMEBUTLER_BASE_URL"
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $env:HOMEBUTLER_BASE_URL -OutFile $target -UseBasicParsing
+            if (-not (Test-Base $target)) {
+              $actual = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToUpperInvariant()
+              throw "基底包 SHA256 不符。期望 $expected，实际 $actual"
+            }
+            $chosen = $target
+          }
+
+          Write-Host "基底包就绪: $chosen（SHA256 校验通过）" -ForegroundColor Green
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "base_package=$chosen`n", $utf8)
+
+      - name: 构建并打包（完整包）
         id: pack
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          .\scripts\Package.ps1 -GameDir '${{ steps.game.outputs.game_dir }}' -Version '${{ steps.ver.outputs.version }}'
+          .\scripts\Package.ps1 `
+            -GameDir '${{ steps.game.outputs.game_dir }}' `
+            -Version '${{ steps.ver.outputs.version }}' `
+            -BasePackage '${{ steps.base.outputs.base_package }}'
+
+      - name: 打包（增量包）
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # 复用上一步已构建的 DLL，只重新组装
+          .\scripts\Package.ps1 `
+            -GameDir '${{ steps.game.outputs.game_dir }}' `
+            -Version '${{ steps.ver.outputs.version }}' `
+            -Lite -SkipBuild
 
       - name: 上传 artifact
         uses: actions/upload-artifact@v4
@@ -128,28 +190,40 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $body = @"
-          ## 安装
+          ## 装哪个包
+
+          | 包 | 适用 |
+          | --- | --- |
+          | ``SurvivalLog.Mods-${{ steps.ver.outputs.version }}-full.zip`` | **推荐**。从零安装，或没装过 HomeButler。已内置 BepInEx 6、Doorstop、.NET 运行时、Unity 基础库与 HomeButler |
+          | ``SurvivalLog.Mods-${{ steps.ver.outputs.version }}-lite.zip`` | 已装好 HomeButler 2.0.0，只想更新本插件 |
+
+          ## 完整包安装（三步）
 
           1. 完全退出游戏。
-          2. 将 zip 内所有内容解压到游戏根目录（包含 ``BepInEx`` 文件夹的那一层）：
+          2. 解压到游戏根目录（含 ``SurvivalLog.exe`` 的那一层）：
              ``...\steamapps\common\Survival Log\``
-          3. 启动游戏。
+          3. 双击 ``Install.cmd``，确认显示安装成功。
 
-          包内已包含 HomeButler 前置组件，无需另行下载。
+          首次启动游戏时 BepInEx 需生成 IL2CPP 接口，可能耗时数分钟；这次通常不会加载插件，
+          **再启动一次**才生效。
 
           ## 校验
 
           ```
-          ${{ steps.pack.outputs.zip_name }}
+          完整包 ${{ steps.pack.outputs.zip_name }}
           SHA256 ${{ steps.pack.outputs.zip_sha256 }}
           ```
+
+          增量包与完整包同名结构，哈希见 Release 资源列表旁的校验记录。
 
           ## 从旧版升级
 
           若曾安装分开的插件，请先删除 ``BepInEx\plugins\SurvivalLog.CharacterEnhancement.dll``
           与 ``BepInEx\plugins\SurvivalLog.ContainerPicker.dll``，否则会重复 patch。
 
-          ## 内容
+          已装官方 HomeButler 包的用户，解压完整包后重跑 ``Install.cmd`` 即可，安装器会跳过内容相同的文件。
+
+          ## 功能
 
           - 人物增强：移动速度 ×3、探索暴露度上限 ×5
           - 容器增强：背包容器下拉选择、拖放目标、自动归类、制作台配方右键
