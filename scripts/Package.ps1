@@ -14,6 +14,9 @@
   完整包还会把上游的游戏版本 / Unity 版本硬校验降级为提示（见 Disable-VersionChecks），
   因为游戏小版本更新后 mod 通常仍可用。需要保留上游行为时加 -KeepVersionChecks。
 
+  完整包额外启用卸载自清理（见 Enable-SelfCleanup）：运行 Uninstall.cmd 撤销安装后，
+  会把解压出来的整个包目录（含所有 .cmd）一并删除。
+
 用法：
   .\scripts\Package.ps1
   .\scripts\Package.ps1 -BasePackage "D:\...\SurvivalLog-HomeButler-2.0.0-Game1.1.18599-win-x64-OFFLINE.zip"
@@ -64,6 +67,95 @@ function Expand-Zip([string]$ZipPath, [string]$Destination) {
     [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $Destination, $enc)
 }
 
+function Set-ZipUtf8Flag([string]$ZipPath) {
+    # .NET 的 ZipArchive 用 UTF-8 写条目名，但**不会**设置通用标志位的 bit 11。
+    # 没这个标志，解压端按 ZIP 规范默认用 CP437 解释文件名，
+    # 于是「先读我.txt」「安装说明.txt」在资源管理器 / unzip / 7-Zip 里全变乱码。
+    #
+    # 关键：不能在整个文件里盲目搜索 PK 签名——压缩数据流里可能恰好出现同样的字节
+    # （payload 里的 unity-libs/*.zip 本身就内嵌了完整 zip，几乎必然命中），
+    # 改到那些字节就是静默破坏数据、解压时报 bad CRC。必须按真实结构跳读：
+    # 本地文件头按「自身长度 + 声明的压缩后长度 + 文件名/扩展区长度」精确跳到下一个。
+    # 中央目录位于结尾，从 EOCD 里读偏移，逐条按固定 46 字节头 + 变长字段递进。
+    $bytes = [System.IO.File]::ReadAllBytes($ZipPath)
+    $patched = 0
+
+    # --- 1. 本地文件头：从偏移 0 开始顺序跳读 ---
+    $i = 0
+    while ($i + 30 -le $bytes.Length) {
+        if (-not ($bytes[$i] -eq 0x50 -and $bytes[$i + 1] -eq 0x4B -and $bytes[$i + 2] -eq 0x03 -and $bytes[$i + 3] -eq 0x04)) { break }
+
+        $flag = [int]$bytes[$i + 6] -bor ([int]$bytes[$i + 7] -shl 8)
+        if (($flag -band 0x0800) -eq 0) {
+            $new = $flag -bor 0x0800
+            $bytes[$i + 6] = [byte]($new -band 0xFF)
+            $bytes[$i + 7] = [byte](($new -shr 8) -band 0xFF)
+            $patched++
+        }
+
+        $compSize = [BitConverter]::ToUInt32($bytes, $i + 18)
+        $nameLen = [BitConverter]::ToUInt16($bytes, $i + 26)
+        $extraLen = [BitConverter]::ToUInt16($bytes, $i + 28)
+        $dataStart = $i + 30 + $nameLen + $extraLen
+        if ($compSize -eq 0xFFFFFFFF -or $dataStart -gt $bytes.Length) { break }  # ZIP64 或结构异常，到此为止
+        $i = $dataStart + $compSize
+    }
+
+    # --- 2. 中央目录项：从 EOCD 记录的偏移开始 ---
+    $eocd = -1
+    for ($k = $bytes.Length - 22; $k -ge 0 -and $k -ge $bytes.Length - 65557; $k--) {
+        if ($bytes[$k] -eq 0x50 -and $bytes[$k + 1] -eq 0x4B -and $bytes[$k + 2] -eq 0x05 -and $bytes[$k + 3] -eq 0x06) { $eocd = $k; break }
+    }
+    if ($eocd -lt 0) { throw 'zip 缺少 EOCD，无法补写 UTF-8 标志位。' }
+
+    $cdCount = [BitConverter]::ToUInt16($bytes, $eocd + 10)
+    $j = [int][BitConverter]::ToUInt32($bytes, $eocd + 16)
+    for ($n = 0; $n -lt $cdCount; $n++) {
+        if ($j + 46 -gt $bytes.Length) { throw "中央目录第 $n 条越界，zip 结构异常。" }
+        if (-not ($bytes[$j] -eq 0x50 -and $bytes[$j + 1] -eq 0x4B -and $bytes[$j + 2] -eq 0x01 -and $bytes[$j + 3] -eq 0x02)) {
+            throw "中央目录第 $n 条签名不符，zip 结构异常。"
+        }
+        $flag = [int]$bytes[$j + 8] -bor ([int]$bytes[$j + 9] -shl 8)
+        if (($flag -band 0x0800) -eq 0) {
+            $new = $flag -bor 0x0800
+            $bytes[$j + 8] = [byte]($new -band 0xFF)
+            $bytes[$j + 9] = [byte](($new -shr 8) -band 0xFF)
+            $patched++
+        }
+        $nameLen = [BitConverter]::ToUInt16($bytes, $j + 28)
+        $extraLen = [BitConverter]::ToUInt16($bytes, $j + 30)
+        $commentLen = [BitConverter]::ToUInt16($bytes, $j + 32)
+        $j += 46 + $nameLen + $extraLen + $commentLen
+    }
+
+    [System.IO.File]::WriteAllBytes($ZipPath, $bytes)
+    return $patched
+}
+
+function Test-ZipUtf8Flag([string]$ZipPath) {
+    # 打包自检用：中央目录里每个条目都必须带 UTF-8 标志，否则中文名在解压端会乱码。
+    $bytes = [System.IO.File]::ReadAllBytes($ZipPath)
+    $eocd = -1
+    for ($k = $bytes.Length - 22; $k -ge 0 -and $k -ge $bytes.Length - 65557; $k--) {
+        if ($bytes[$k] -eq 0x50 -and $bytes[$k + 1] -eq 0x4B -and $bytes[$k + 2] -eq 0x05 -and $bytes[$k + 3] -eq 0x06) { $eocd = $k; break }
+    }
+    if ($eocd -lt 0) { return -1 }
+
+    $cdCount = [BitConverter]::ToUInt16($bytes, $eocd + 10)
+    $j = [int][BitConverter]::ToUInt32($bytes, $eocd + 16)
+    $missing = 0
+    for ($n = 0; $n -lt $cdCount; $n++) {
+        if ($j + 46 -gt $bytes.Length) { return -1 }
+        $flag = [int]$bytes[$j + 8] -bor ([int]$bytes[$j + 9] -shl 8)
+        if (($flag -band 0x0800) -eq 0) { $missing++ }
+        $nameLen = [BitConverter]::ToUInt16($bytes, $j + 28)
+        $extraLen = [BitConverter]::ToUInt16($bytes, $j + 30)
+        $commentLen = [BitConverter]::ToUInt16($bytes, $j + 32)
+        $j += 46 + $nameLen + $extraLen + $commentLen
+    }
+    return $missing
+}
+
 function New-ZipFromDirectory([string]$SourceDir, [string]$ZipPath) {
     # 不用 Compress-Archive：PowerShell 5.1 的实现在条目名里写反斜杠，
     # 跨平台解压与部分第三方解压工具会把它当成文件名的一部分。
@@ -96,11 +188,126 @@ function New-ZipFromDirectory([string]$SourceDir, [string]$ZipPath) {
     finally { $fs.Dispose() }
 }
 
+function Apply-TextPatches {
+    # 只替换最小片段；任一片段匹配次数不为 1 就中止，避免上游改版后静默失效。
+    # 返回被改动的文件名列表，并同步 manifest 的 SHA-256（否则 Setup.ps1 会报 Package damaged）。
+    param(
+        [string]$PkgDir,
+        $Manifest,
+        [object[]]$Patches,
+        [string]$Label = '补丁'
+    )
+
+    $touched = New-Object System.Collections.Generic.List[string]
+
+    # 按文件分组：同一文件上的多个补丁必须在同一份文本上顺序替换。
+    # 之前是「每条补丁都重新 ReadAllText」，看似安全，实则把上一条补丁的改动又读回来了，
+    # 于是后一条基于旧文本定位、写回时覆盖掉前一条——多次补丁互相踩踏、全部错位。
+    # 这里手动分桶而不是 Group-Object：$Patches 的元素是 hashtable，
+    # 在 PowerShell 5.1 下 Group-Object -Property File 取不到键，会把它们并成一组、Name 为空。
+    $files = New-Object System.Collections.Generic.List[string]
+    $buckets = @{}
+    foreach ($p in $Patches) {
+        $f = [string]$p['File']
+        if ([string]::IsNullOrWhiteSpace($f)) { throw "${Label}配置错误：有一条补丁没有写 File。" }
+        if (-not $buckets.ContainsKey($f)) {
+            $buckets[$f] = New-Object System.Collections.Generic.List[object]
+            $files.Add($f)
+        }
+        $buckets[$f].Add($p)
+    }
+
+    foreach ($file in $files) {
+        $path = Join-Path $PkgDir $file
+        if (-not (Test-Path -LiteralPath $path)) { throw "${Label}失败：找不到 $file" }
+
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+        $raw = [System.IO.File]::ReadAllText($path)
+
+        # 本脚本自身是 LF，上游文件是 CRLF。\r\n -> \n 会改变文本长度，
+        # 所以不在原文上按绝对位置替换，而是全程在归一化文本上做替换，
+        # 最后一次还原成原来的换行风格写回：既不丢位置，也不会把 CRLF 文件改成 LF。
+        $crlf = $raw.Contains("`r`n")
+        $text = $raw -replace "`r`n", "`n"
+
+        foreach ($p in $buckets[$file]) {
+            $oldN = ([string]$p['Old']) -replace "`r`n", "`n"
+            $hits = ([regex]::Matches($text, [regex]::Escape($oldN))).Count
+            if ($hits -ne 1) {
+                throw "${Label}失配：$file 中目标片段出现 $hits 次（期望 1）。上游可能已改版，请检查后再发布。"
+            }
+            $text = $text.Replace($oldN, (([string]$p['New']) -replace "`r`n", "`n"))
+        }
+
+        if ($crlf) { $text = $text -replace "`n", "`r`n" }
+        [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($hasBom))
+        $touched.Add($file)
+    }
+
+    foreach ($file in $touched) {
+        $entry = @($Manifest.PackageFiles) | Where-Object { $_.Path -eq $file }
+        if (-not $entry) { throw "manifest 未登记 $file，无法更新补丁后的哈希。" }
+        $entry.SHA256 = Get-Sha256 (Join-Path $PkgDir $file)
+    }
+
+    return $touched
+}
+
+function Enable-SelfCleanup([string]$PkgDir, $Manifest) {
+    # 卸载后自清理：撤销安装的同时，把解压出来的整个包目录删掉（含本脚本与所有 .cmd）。
+    #
+    # 清理逻辑放在独立的 SelfCleanup.ps1 里，Setup.ps1 只插入一行调用：
+    # 一是不用把大段代码塞进单引号字符串（转义极难维护），
+    # 二是删除清单、失败处理等逻辑都能单独阅读与测试。
+    # 清单本身用 manifest 的 CleanupFiles 字段（见 Add-SelfCleanupManifest），不复用
+    # PackageFiles——后者路径相对包目录且有哈希校验，混入别的路径会让安装器报 Package damaged。
+    $patches = @(
+        @{
+            File = 'Setup.ps1'
+            # 只在 Uninstall 分支打一个锚点：回滚成功后再调用随包分发的清理脚本。
+            # 这段文本在上游 Setup.ps1 中只出现一次，且不涉及大括号，不会像 "</}" 那样误命中。
+            Old  = '        Write-Host ''Uninstalled. Pre-existing files restored; unrelated files and saves untouched.''
+        exit 0'
+            New  = '        Write-Host ''Uninstalled. Pre-existing files restored; unrelated files and saves untouched.''
+        # 自定义：回滚成功后删除整个解压包目录（含 Uninstall.cmd 自身）。
+        # 回滚抛错时走 catch，不会执行到这里，包与 .state 备份都还在。
+        $cleanupScript = Join-Path $packageRoot ''SelfCleanup.ps1''
+        if(Test-Path -LiteralPath $cleanupScript){ & $cleanupScript -GameRoot $gameRoot -PackageRoot $packageRoot }
+        else { Write-Warning ''[mods] SelfCleanup.ps1 missing; package folder left in place.'' }
+        exit 0'
+        }
+    )
+
+    return (Apply-TextPatches -PkgDir $PkgDir -Manifest $Manifest -Patches $patches -Label '自清理补丁')
+}
+
+function Add-SelfCleanupManifest([string]$PkgDir, $Manifest, [string]$StageRoot) {
+    # 自清理的删除清单存在独立字段 CleanupFiles 里，路径相对于「解压后的根目录」。
+    # 不复用 PackageFiles：那个字段的路径相对于包目录，且 Setup.ps1 启动时会逐条校验
+    # 哈希，混入包目录以外的路径会让安装器直接报 Package damaged。
+    # 注意：包目录自身的 .state 是备份与状态目录，不列入，否则会把备份删一半。
+    $pkgLeaf = Split-Path $PkgDir -Leaf
+    $list = New-Object System.Collections.Generic.List[object]
+    $seen = @{}
+
+    foreach ($root in @($StageRoot, $PkgDir)) {
+        foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
+            $rel = $file.FullName.Substring($StageRoot.Length).TrimStart('\').Replace('\', '/')
+            if ($rel -match '^' + [regex]::Escape($pkgLeaf) + '/\.state/') { continue }
+            if ($seen.ContainsKey($rel)) { continue }
+            $seen[$rel] = $true
+            $list.Add([pscustomobject]@{ Path = $rel; SHA256 = Get-Sha256 $file.FullName })
+        }
+    }
+    $Manifest | Add-Member -NotePropertyName 'CleanupFiles' -NotePropertyValue @($list.ToArray()) -Force
+    return $list.Count
+}
+
 function Disable-VersionChecks([string]$PkgDir, $Manifest) {
     # 上游把游戏版本 / Unity 版本当作安装门槛：Unity 版本不符直接 throw，
     # Launch.ps1 的构建指纹不符则进入安全模式（等于禁用 mod）。
     # 实测游戏更新后 mod 往往仍可用，因此把「阻断」降级为「提示」。
-    # 只替换最小片段；任一片段匹配次数不为 1 就中止，避免上游改版后静默失效。
     $patches = @(
         @{
             File = 'Setup.ps1'
@@ -125,34 +332,7 @@ function Disable-VersionChecks([string]$PkgDir, $Manifest) {
         }
     )
 
-    $touched = New-Object System.Collections.Generic.List[string]
-
-    foreach ($p in $patches) {
-        $path = Join-Path $PkgDir $p.File
-        if (-not (Test-Path -LiteralPath $path)) { throw "版本校验补丁失败：找不到 $($p.File)" }
-
-        $bytes = [System.IO.File]::ReadAllBytes($path)
-        $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
-        $text = [System.IO.File]::ReadAllText($path)
-
-        $hits = ([regex]::Matches($text, [regex]::Escape($p.Old))).Count
-        if ($hits -ne 1) {
-            throw "版本校验补丁失配：$($p.File) 中目标片段出现 $hits 次（期望 1）。上游可能已改版，请检查后再发布。"
-        }
-
-        $text = $text.Replace($p.Old, $p.New)
-        [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($hasBom))
-        if (-not $touched.Contains($p.File)) { $touched.Add($p.File) }
-    }
-
-    # 改动后的文件必须同步 manifest 的校验值，否则 Setup.ps1 启动时会报 Package damaged
-    foreach ($file in $touched) {
-        $entry = @($Manifest.PackageFiles) | Where-Object { $_.Path -eq $file }
-        if (-not $entry) { throw "manifest 未登记 $file，无法更新补丁后的哈希。" }
-        $entry.SHA256 = Get-Sha256 (Join-Path $PkgDir $file)
-    }
-
-    return $touched
+    return (Apply-TextPatches -PkgDir $PkgDir -Manifest $Manifest -Patches $patches -Label '版本校验补丁')
 }
 
 function Find-BasePackage {
@@ -239,6 +419,14 @@ Survival Butler $Version —— 安装说明
 
 卸载
   运行 Uninstall.cmd 撤销安装。它按安装记录恢复原文件，不会删除存档与个人配置。
+
+  撤销成功后，本包会删除整个解压出来的目录（含 Uninstall.cmd、其他 .cmd 与
+  HomeButler-2.0.0-Package）。也就是说：装一次 → 用一阵 → 卸载，游戏目录回到
+  装之前的样子，不留任何本包的文件。
+  · 删除发生在回滚成功之后；回滚失败时整个包目录保留，便于排查后重试。
+  · 若个别文件被占用或被安全软件拦截，会提示 "Package folder kept" 并列出残留文件，
+    其余文件已经删除；关掉占用程序后手动删除剩余文件即可。
+  · 想保留脚本与备份供以后对照，请在运行 Uninstall.cmd 之前把整个包目录复制到别处。
 
 第三方组件
   本包内含 BepInEx 6 (IL2CPP)、Doorstop、.NET 运行时与 Unity 基础库，
@@ -346,6 +534,14 @@ else {
 
     [System.IO.File]::WriteAllText($mPath, ($manifest | ConvertTo-Json -Depth 20), $utf8NoBom)
 
+    # --- 卸载后自清理：随包分发 SelfCleanup.ps1，并让 Setup.ps1 在回滚成功后调用它 ---
+    $cleanupScript = Join-Path $repoRoot "scripts\SelfCleanup.ps1"
+    if (-not (Test-Path -LiteralPath $cleanupScript)) { throw "缺少卸载自清理脚本：$cleanupScript" }
+    Copy-Item $cleanupScript -Destination (Join-Path $pkgDir.FullName "SelfCleanup.ps1") -Force
+
+    $cleanupFiles = Enable-SelfCleanup -PkgDir $pkgDir.FullName -Manifest $manifest
+    $patchedFiles = @(@($patchedFiles) + @($cleanupFiles) | Where-Object { $_ } | Select-Object -Unique)
+
     # --- 追加说明到「先读我.txt」（保持原有 BOM） ---
     $readmePath = Join-Path $stage "先读我.txt"
     if (Test-Path $readmePath) {
@@ -375,7 +571,9 @@ else {
 功能：移动速度 x3、探索暴露度上限 x5；背包容器下拉选择、拖放目标、
       自动归类、制作台配方右键。
 排查：ViewLog.cmd 打开 BepInEx\LogOutput.log，搜索 "Survival Butler"。
-卸载：运行 Uninstall.cmd 会一并撤销本插件。
+卸载：运行 Uninstall.cmd 会一并撤销本插件，并删除整个解压包目录
+      （含本说明、所有 .cmd 与 HomeButler-2.0.0-Package）。
+      备份与回滚发生在删除之前；若回滚失败，包目录会保留，便于排查后重试。
 许可：HomeButler-2.0.0-Package\licenses\ 与本包 licenses\ 目录。
 
 $versionNote
@@ -395,7 +593,7 @@ $versionNote
 
 ## 改动目的
 
-移除游戏版本与 Unity 版本的**硬校验**。理由：游戏小版本更新后 mod 通常仍可正常使用，
+1. 移除游戏版本与 Unity 版本的**硬校验**。理由：游戏小版本更新后 mod 通常仍可正常使用，
 版本号本身不足以判断兼容性。上游把版本不符当作安装门槛，会让用户在可用的版本上装不了。
 
 ## 改动明细
@@ -406,9 +604,29 @@ $versionNote
 | `Setup.ps1` | 游戏版本不符：`Write-Warning` → 仅输出提示，不影响安装 |
 | `Setup.ps1` | Unity 版本不符：`throw` → `Write-Warning` |
 | `Launch.ps1` | 构建指纹比对：移除循环，不再因指纹不符自动进入安全模式 |
+| `Setup.ps1` | `Uninstall` 分支：`RestoreState` 成功后调用随包分发的 `SelfCleanup.ps1` |
+| — | 新增 `SelfCleanup.ps1`（本包独有文件，上游没有） |
 
 被修改文件的 SHA-256 已同步写入 `manifest.json` 的 `PackageFiles`，因此上游安装器
 的完整性校验仍能通过。
+
+## 卸载自清理
+
+运行 `Uninstall.cmd` 撤销安装后，解压出来的整个包目录会被删除，**包括 `Uninstall.cmd`
+自己**、`Install.cmd`、`先读我.txt`、`安装说明.txt` 与 `HomeButler-2.0.0-Package` 目录，
+游戏根目录只留下游戏本体的文件。
+
+- 删除清单来自 `manifest.json` 的 `CleanupFiles` 字段（打包时生成，覆盖解压后根目录里的
+  每个文件，并且额外登记 `manifest.json` 自身），**不递归删除包目录**：包目录位于游戏根目录内，
+  一旦解压层级异常，递归删除会打到游戏本体。按清单删除只命中本包自己的文件。
+- 路径相对于**解压根目录**，与 `PackageFiles`（相对包目录、带哈希校验）刻意分开，
+  混用会让安装器启动时报 `Package damaged`。
+- `HomeButler-2.0.0-Package\.state\`（备份与安装状态）不登记为待删文件，由清理脚本
+  在所有文件删净后单独移除，避免把备份删一半。
+- 删除发生在**回滚成功之后**。回滚抛错时 `Setup.ps1` 走 catch 分支，包目录与 `.state`
+  备份都保留，可以排查后重跑 `Uninstall.cmd`。
+- 杀软或文件占用可能导致个别文件删不掉。此时包目录保留，并列出失败条目提示手动删除；
+  删除结果以「删完之后文件还在不在」为准，不会把已经删掉的文件误报为残留。
 
 ## 没有改动的东西
 
@@ -442,6 +660,21 @@ $versionNote
 
 [System.IO.File]::WriteAllText((Join-Path $stage "安装说明.txt"), $installNotes, $utf8Bom)
 
+# --- 自清理删除清单：必须在所有文件写完、打包之前生成，否则会漏登记 ---
+if ($pkgDir) {
+    $cleanupCount = Add-SelfCleanupManifest -PkgDir $pkgDir.FullName -Manifest $manifest -StageRoot $stage
+    $mPath = Join-Path $pkgDir.FullName "manifest.json"
+    [System.IO.File]::WriteAllText($mPath, ($manifest | ConvertTo-Json -Depth 20), $utf8NoBom)
+
+    # manifest.json 自己也要删，但它的哈希只有写回后才能算：先写一次不含自己的清单，
+    # 算出哈希后再把这一条追加进去写第二次。
+    $selfRel = "$(Split-Path $pkgDir.FullName -Leaf)/manifest.json"
+    $manifest.CleanupFiles = @($manifest.CleanupFiles) + [pscustomobject]@{ Path = $selfRel; SHA256 = Get-Sha256 $mPath }
+    [System.IO.File]::WriteAllText($mPath, ($manifest | ConvertTo-Json -Depth 20), $utf8NoBom)
+
+    Write-Host "卸载自清理已启用：CleanupFiles $($cleanupCount + 1) 条（含 manifest.json 自身）" -ForegroundColor Cyan
+}
+
 # ---- 打包 -------------------------------------------------------------
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $edition = if ($Lite) { "lite" } else { "full" }
@@ -450,6 +683,11 @@ $zipPath = Join-Path $OutputDir $zipName
 
 # Compress-Archive 在 PowerShell 5.1 下写反斜杠条目名，这里用自建条目（见 New-ZipFromDirectory）
 New-ZipFromDirectory -SourceDir $stage -ZipPath $zipPath
+
+# 补上 UTF-8 标志位：.NET 写条目名用 UTF-8 但不设 bit 11，
+# 缺少它时「先读我.txt」「安装说明.txt」在资源管理器 / unzip / 7-Zip 里会显示成乱码。
+$utf8Flagged = Set-ZipUtf8Flag -ZipPath $zipPath
+Write-Host "已为 $utf8Flagged 处条目补写 UTF-8 标志位" -ForegroundColor Cyan
 
 # ---- 自检 -------------------------------------------------------------
 $fail = New-Object System.Collections.Generic.List[string]
@@ -460,6 +698,10 @@ $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
     $entries = @($zip.Entries | Where-Object { $_.Name -ne "" })
     if ($entries.Count -eq 0) { $fail.Add("zip 为空") }
+
+    # 中文条目名必须能被正确还原：只要有一份没打 UTF-8 标志，解压端就会按 CP437 读成乱码。
+    $missingFlag = Test-ZipUtf8Flag -ZipPath $zipPath
+    if ($missingFlag -gt 0) { $fail.Add("有 $missingFlag 个中央目录条目缺少 UTF-8 标志位（中文文件名会乱码）") }
 
     foreach ($e in $entries) {
         if ($e.FullName.Contains("\")) { $fail.Add("条目使用反斜杠: $($e.FullName)") }
@@ -519,17 +761,40 @@ try {
 
         if (Test-Path (Join-Path $stage "先读我.txt")) {
             $txt = [System.IO.File]::ReadAllText((Join-Path $stage "先读我.txt"))
-            if ($txt -notmatch "SurvivalLog\.Mods") { $warn.Add("先读我.txt 未写入插件说明") }
+            if ($txt -notmatch "Survival Butler") { $warn.Add("先读我.txt 未写入插件说明") }
         }
 
         # 版本校验补丁必须真的生效，不能因为替换失败而静默放过
         if (-not $KeepVersionChecks) {
             $setupText = [System.IO.File]::ReadAllText((Join-Path $pkgDir.FullName "Setup.ps1"))
             $launchText = [System.IO.File]::ReadAllText((Join-Path $pkgDir.FullName "Launch.ps1"))
-            if ($setupText -match "throw 'Unity engine changed") { $fail.Add("补丁未生效：Setup.ps1 仍会因 Unity 版本中止安装") }
-            if ($setupText -match "throw 'Game version file missing") { $fail.Add("补丁未生效：Setup.ps1 仍要求版本文件存在") }
+            # 检测补丁后的标志文本，而不是原始 throw 片段——后者在补丁后的提示语里仍然出现
+            if ($setupText -notmatch 'differs from tested 6000\.2\.7') { $fail.Add("补丁未生效：Setup.ps1 仍会因 Unity 版本中止安装") }
+            if ($setupText -notmatch 'continuing without version check') { $fail.Add("补丁未生效：Setup.ps1 仍要求版本文件存在") }
             if ($launchText -match "LaunchFingerprints") { $fail.Add("补丁未生效：Launch.ps1 仍比对构建指纹") }
             if (-not (Test-Path (Join-Path $pkgDir.FullName "MODS-PATCH.md"))) { $fail.Add("缺少 MODS-PATCH.md（改动说明）") }
+        }
+
+        # 自清理补丁必须真的生效，且删除清单要覆盖解压后的每个文件
+        $setupOut = [System.IO.File]::ReadAllText((Join-Path $pkgDir.FullName "Setup.ps1"))
+        if ($setupOut -notmatch 'SelfCleanup\.ps1' -or $setupOut -notmatch '-GameRoot \$gameRoot') {
+            $fail.Add("自清理补丁未生效：Uninstall 分支未调用 SelfCleanup.ps1")
+        }
+        if ($setupOut -notmatch 'SelfCleanup\.ps1') { $fail.Add("自清理补丁未生效：Setup.ps1 未引用 SelfCleanup.ps1") }
+        if (-not (Test-Path (Join-Path $pkgDir.FullName "SelfCleanup.ps1"))) { $fail.Add("缺少 SelfCleanup.ps1") }
+
+        $cleanup = @($m.CleanupFiles)
+        if ($cleanup.Count -eq 0) { $fail.Add("manifest 缺少 CleanupFiles（卸载后不会自清理）") }
+        else {
+            foreach ($c in $cleanup) {
+                $abs = Join-Path $stage ($c.Path -replace '/', '\')
+                if (-not (Test-Path -LiteralPath $abs)) { $fail.Add("CleanupFiles 条目不存在: $($c.Path)") }
+            }
+            # 解压后根目录里的每个文件都必须在清单里，否则会被留成垃圾
+            foreach ($f in Get-ChildItem -LiteralPath $stage -File -Recurse -Force) {
+                $rel = $f.FullName.Substring($stage.Length).TrimStart('\').Replace('\', '/')
+                if (-not ($cleanup | Where-Object { $_.Path -eq $rel })) { $fail.Add("CleanupFiles 漏登记: $rel") }
+            }
         }
     }
 }
