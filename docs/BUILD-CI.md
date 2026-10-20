@@ -123,7 +123,29 @@ HomeButler-2.0.0-Package/
 3. 调用 `PanelLayout.Transform` 把容器脚本注入 10 个游戏页面；
 4. 写 `BepInEx.cfg` 的 `[IL2CPP]` 段。
 
-本插件只是往 `payload/BepInEx/plugins/` 里加了一个 DLL，并在 `Payload`、`PackageFiles` 各补一条记录。上游的安装、卸载、恢复逻辑完全复用，没有改动 `Setup.ps1`。
+本插件往 `payload/BepInEx/plugins/` 里加了一个 DLL，并在 `Payload`、`PackageFiles` 各补一条记录。上游的安装、卸载、恢复逻辑完全复用。
+
+## 版本校验补丁
+
+打包时会对上游脚本做一次**最小化文本替换**，把版本判断从「阻断」降为「提示」：
+
+| 文件 | 原行为 | 改后 |
+| --- | --- | --- |
+| `Setup.ps1` | 版本文件缺失 → `throw` | `Write-Warning`，继续 |
+| `Setup.ps1` | 游戏版本不符 → `Write-Warning` | `Write-Host` 提示后继续 |
+| `Setup.ps1` | Unity 版本不符 → `throw` 中止安装 | `Write-Warning`，继续 |
+| `Launch.ps1` | 构建指纹不符 → 进安全模式（禁用 mod） | 跳过指纹比对 |
+
+理由：游戏小版本更新后 mod 通常仍可正常工作，版本号本身不足以判断兼容性。
+
+约束与边界：
+
+- 只替换这 4 个片段，每段要求在上游文件中**恰好出现 1 次**，否则打包直接失败——上游改版时不会静默放过。
+- 改动后同步更新 `manifest.json` 里这两个文件的 SHA-256，安装器自身的完整性校验照常通过。
+- `Setup.ps1 -Action Check` 失败仍会触发安全模式。它守的是文件结构（页面缺失、路径冲突），与版本号无关，这层保护保留。
+- 需要保留上游行为时，打包加 `-KeepVersionChecks`。
+
+改动记录会写入包内 `HomeButler-2.0.0-Package/MODS-PATCH.md`。
 
 **增量包** `SurvivalLog.Mods-<版本>-lite.zip`（几十 KB）
 

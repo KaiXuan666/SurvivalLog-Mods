@@ -12,7 +12,7 @@
 
 ## 前置条件
 
-1. Steam 版《生存日志》（游戏 1.1.18599 / Unity 6000.2.7f2）。
+1. Steam 版《生存日志》（**适配**游戏 1.1.18599 / Unity 6000.2.7f2）。游戏小版本更新后通常仍可用，安装包**不因版本号不符而拒绝安装**——版本检查已降级为提示，详见 [`docs/BUILD-CI.md`](docs/BUILD-CI.md#版本校验补丁)。
 2. **BepInEx 6 (IL2CPP) 运行环境**。游戏本体**不**自带 BepInEx——加载器、Doorstop、.NET 运行时与 Unity 基础库都由 HomeButler 的离线整合包提供。装好完整包后这些会自动就位。
 3. `BepInEx/interop` 已生成（`AttributeComponent`、`ExploreManager`、`ItemManager`、`FurnitureTagComponent`、`WebUIVm`、`WebUILayer` 等 IL2CPP 接口）。它由 BepInEx 首次启动时从 Unity 基础库生成，游戏更新后需重新核对这些 API。
 4. **HomeButler 2.0.0**（`local.survivallog.homeaccess`）：完整包（`-full`）已内置；增量包（`-lite`）需要你事先装好。
@@ -27,7 +27,7 @@ HomeButler 由原作者 lingxiangtingsheng 创作、维护者 lingbaicat 适配�
 | 上游 README、CHANGELOG | ✅ 收录 | 保留原始说明与变更记录 |
 | 原始许可文本 | ✅ 收录 | [`licenses/HomeButler-LICENSE.md`](licenses/HomeButler-LICENSE.md) |
 | 编译产物（5 个 `BaseButler*.dll`） | ❌ 仓库不收录 | 完整包（`-full`）会原样转发上游离线整合包，其中包含这 5 个 DLL 以及 BepInEx 6、Doorstop、.NET 运行时与 Unity 基础库；仓库内仅以 [`third-party/HomeButler.json`](third-party/HomeButler.json) 的 SHA-256 记录版本 |
-| 安装器与运行时（`Setup.ps1`、`Launch.ps1`、`payload/`、`manifest.json`） | ❌ 不收录 | 属于打包与部署产物，非源码。完整包按上游原样分发，不改动其安装与卸载逻辑 |
+| 安装器与运行时（`Setup.ps1`、`Launch.ps1`、`payload/`、`manifest.json`） | ❌ 不收录 | 属于打包与部署产物，非源码。完整包按上游原样分发，仅对版本校验做了降级处理（见 [`docs/BUILD-CI.md`](docs/BUILD-CI.md#版本校验补丁)），安装与卸载逻辑未改 |
 
 授权依据见 [`licenses/HomeButler-AUTHORIZATION.md`](licenses/HomeButler-AUTHORIZATION.md)。上游地址：<https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat>
 

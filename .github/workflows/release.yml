@@ -35,6 +35,11 @@ on:
         description: "已有的 HomeButler 离线包路径（留空则自动下载）"
         required: false
         type: string
+      keep_version_checks:
+        description: "保留上游的游戏版本/Unity 版本硬校验（默认已降级为提示）"
+        required: false
+        type: boolean
+        default: false
       publish_release:
         description: "构建后创建 GitHub Release"
         required: false
@@ -162,10 +167,13 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $extra = @()
+          if ('${{ inputs.keep_version_checks }}' -eq 'true') { $extra += '-KeepVersionChecks' }
           .\scripts\Package.ps1 `
             -GameDir '${{ steps.game.outputs.game_dir }}' `
             -Version '${{ steps.ver.outputs.version }}' `
-            -BasePackage '${{ steps.base.outputs.base_package }}'
+            -BasePackage '${{ steps.base.outputs.base_package }}' `
+            @extra
 
       - name: 打包（增量包）
         shell: powershell

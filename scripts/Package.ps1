@@ -11,6 +11,9 @@
   增量包（-Lite）
     只含 BepInEx\plugins\SurvivalLog.Mods.dll，供已装好 HomeButler 的用户升级。
 
+  完整包还会把上游的游戏版本 / Unity 版本硬校验降级为提示（见 Disable-VersionChecks），
+  因为游戏小版本更新后 mod 通常仍可用。需要保留上游行为时加 -KeepVersionChecks。
+
 用法：
   .\scripts\Package.ps1
   .\scripts\Package.ps1 -BasePackage "D:\...\SurvivalLog-HomeButler-2.0.0-Game1.1.18599-win-x64-OFFLINE.zip"
@@ -25,7 +28,8 @@ param(
     [string]$BasePackage,
     [string[]]$BaseSearchDirs,
     [switch]$SkipBuild,
-    [switch]$Lite
+    [switch]$Lite,
+    [switch]$KeepVersionChecks
 )
 
 Set-StrictMode -Version Latest
@@ -90,6 +94,65 @@ function New-ZipFromDirectory([string]$SourceDir, [string]$ZipPath) {
         finally { $archive.Dispose() }
     }
     finally { $fs.Dispose() }
+}
+
+function Disable-VersionChecks([string]$PkgDir, $Manifest) {
+    # 上游把游戏版本 / Unity 版本当作安装门槛：Unity 版本不符直接 throw，
+    # Launch.ps1 的构建指纹不符则进入安全模式（等于禁用 mod）。
+    # 实测游戏更新后 mod 往往仍可用，因此把「阻断」降级为「提示」。
+    # 只替换最小片段；任一片段匹配次数不为 1 就中止，避免上游改版后静默失效。
+    $patches = @(
+        @{
+            File = 'Setup.ps1'
+            Old  = 'if(!(Test-Path -LiteralPath $versionPath)){throw ''Game version file missing.''}'
+            New  = 'if(!(Test-Path -LiteralPath $versionPath)){Write-Warning ''[mods] Game version file missing; continuing without version check.''}'
+        },
+        @{
+            File = 'Setup.ps1'
+            Old  = 'if($gameVersion -ne $manifest.GameVersion){Write-Warning "Untested game version $gameVersion; checking layout structure. Native API compatibility is not guaranteed."}'
+            New  = 'if($gameVersion -ne $manifest.GameVersion){Write-Host "[mods] Game $gameVersion; package targets $($manifest.GameVersion). Continuing anyway."}'
+        },
+        @{
+            File = 'Setup.ps1'
+            Old  = 'if(!$unity.StartsWith(''6000.2.7.'')){throw ''Unity engine changed. This offline runtime supports 6000.2.7 only.''}'
+            # "$unity" 保证读不到版本信息时是空串而不是 null，避免 null 方法调用直接崩掉
+            New  = 'if(!("$unity".StartsWith(''6000.2.7.''))){Write-Warning "[mods] Unity $unity differs from tested 6000.2.7; continuing. If the game misbehaves, run SafeMode.cmd."}'
+        },
+        @{
+            File = 'Launch.ps1'
+            Old  = 'foreach($f in $manifest.LaunchFingerprints){if((Hash (SafePath $f.Path)) -ne $f.SHA256){$supported=$false}}'
+            New  = 'Write-Host ''[mods] Game build fingerprint check disabled; relying on install state instead.'''
+        }
+    )
+
+    $touched = New-Object System.Collections.Generic.List[string]
+
+    foreach ($p in $patches) {
+        $path = Join-Path $PkgDir $p.File
+        if (-not (Test-Path -LiteralPath $path)) { throw "版本校验补丁失败：找不到 $($p.File)" }
+
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+        $text = [System.IO.File]::ReadAllText($path)
+
+        $hits = ([regex]::Matches($text, [regex]::Escape($p.Old))).Count
+        if ($hits -ne 1) {
+            throw "版本校验补丁失配：$($p.File) 中目标片段出现 $hits 次（期望 1）。上游可能已改版，请检查后再发布。"
+        }
+
+        $text = $text.Replace($p.Old, $p.New)
+        [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($hasBom))
+        if (-not $touched.Contains($p.File)) { $touched.Add($p.File) }
+    }
+
+    # 改动后的文件必须同步 manifest 的校验值，否则 Setup.ps1 启动时会报 Package damaged
+    foreach ($file in $touched) {
+        $entry = @($Manifest.PackageFiles) | Where-Object { $_.Path -eq $file }
+        if (-not $entry) { throw "manifest 未登记 $file，无法更新补丁后的哈希。" }
+        $entry.SHA256 = Get-Sha256 (Join-Path $PkgDir $file)
+    }
+
+    return $touched
 }
 
 function Find-BasePackage {
@@ -268,6 +331,13 @@ else {
     $relSource = "payload/BepInEx/plugins/SurvivalLog.Mods.dll"
     $relTarget = "BepInEx\plugins\SurvivalLog.Mods.dll"
 
+    # --- 移除上游的版本硬校验（需在写回 manifest 之前完成，以便同步哈希） ---
+    $patchedFiles = @()
+    if (-not $KeepVersionChecks) {
+        $patchedFiles = Disable-VersionChecks -PkgDir $pkgDir.FullName -Manifest $manifest
+        Write-Host "已移除版本硬校验：$($patchedFiles -join '、')" -ForegroundColor Cyan
+    }
+
     $manifest.Payload = @(@($manifest.Payload) | Where-Object { $_.Target -ne $relTarget }) +
         [pscustomobject]@{ Target = $relTarget; Source = $relSource }
 
@@ -279,6 +349,21 @@ else {
     # --- 追加说明到「先读我.txt」（保持原有 BOM） ---
     $readmePath = Join-Path $stage "先读我.txt"
     if (Test-Path $readmePath) {
+        $versionNote = if ($KeepVersionChecks) {
+            "版本校验：保留上游原样（游戏版本不符会警告，Unity 版本不符会中止安装）。"
+        }
+        else {
+            @"
+版本校验：本包已移除上游的游戏版本 / Unity 版本硬校验。
+  · Setup.ps1：版本不符只提示，不再中止安装；
+  · Launch.ps1：不再比对游戏构建指纹，不会因此自动进入安全模式。
+  之所以这样做，是因为游戏小版本更新后 mod 经常仍可正常使用；版本号本身不足以
+  判断兼容性。代价是失去了上游的自动保护：若游戏大版本更新导致界面结构或 IL2CPP
+  接口变化，插件可能失效甚至报错——此时请运行 SafeMode.cmd 关闭 mod 对照排查，
+  或删除本插件等待适配。
+"@
+        }
+
         $extra = @"
 
 ────────────────────────────────────────────────────────────────
@@ -292,9 +377,55 @@ else {
 排查：ViewLog.cmd 打开 BepInEx\LogOutput.log，搜索 "SurvivalLog.Mods"。
 卸载：运行 Uninstall.cmd 会一并撤销本插件。
 许可：HomeButler-2.0.0-Package\licenses\ 与本包 licenses\ 目录。
+
+$versionNote
+
+被修改的上游文件：$($patchedFiles -join '、')（详见 MODS-PATCH.md，校验值已同步更新）
 "@
         [System.IO.File]::AppendAllText($readmePath, $extra, $utf8Bom)
     }
+
+    # --- 记录对上游脚本的改动，便于追溯 ---
+    if ($patchedFiles.Count -gt 0) {
+        $patchDoc = @"
+# 对 HomeButler 离线包所做的改动
+
+本包由 SurvivalLog.Mods 的打包脚本（`scripts/Package.ps1`）在**解压官方离线包之后**生成，
+仅对下列文件做了文本替换，其余文件与上游逐字节一致。
+
+## 改动目的
+
+移除游戏版本与 Unity 版本的**硬校验**。理由：游戏小版本更新后 mod 通常仍可正常使用，
+版本号本身不足以判断兼容性。上游把版本不符当作安装门槛，会让用户在可用的版本上装不了。
+
+## 改动明细
+
+| 文件 | 改动 |
+| --- | --- |
+| `Setup.ps1` | 版本文件缺失：`throw` → `Write-Warning` |
+| `Setup.ps1` | 游戏版本不符：`Write-Warning` → 仅输出提示，不影响安装 |
+| `Setup.ps1` | Unity 版本不符：`throw` → `Write-Warning` |
+| `Launch.ps1` | 构建指纹比对：移除循环，不再因指纹不符自动进入安全模式 |
+
+被修改文件的 SHA-256 已同步写入 `manifest.json` 的 `PackageFiles`，因此上游安装器
+的完整性校验仍能通过。
+
+## 没有改动的东西
+
+- `Setup.ps1` 的安装 / 卸载 / 状态恢复逻辑，`Payload` 驱动的文件复制、页面注入、
+  备份与回滚，全部保持原样；
+- `SafeMode.cmd` / `RestoreMods.cmd` 的安全模式机制保留，仍可手动使用；
+- 页面结构校验（`AdaptiveLayout`、`PanelLayout`）与文件冲突检测保留。
+
+## 使用了 `-KeepVersionChecks` 打包时
+
+此文件不会出现，包内脚本与上游完全一致。
+
+生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+"@
+        [System.IO.File]::WriteAllText((Join-Path $pkgDir.FullName "MODS-PATCH.md"), $patchDoc, $utf8NoBom)
+    }
+
 
     # --- release.json 标注整合来源 ---
     $relPath = Join-Path $stage "release.json"
@@ -389,6 +520,16 @@ try {
         if (Test-Path (Join-Path $stage "先读我.txt")) {
             $txt = [System.IO.File]::ReadAllText((Join-Path $stage "先读我.txt"))
             if ($txt -notmatch "SurvivalLog\.Mods") { $warn.Add("先读我.txt 未写入插件说明") }
+        }
+
+        # 版本校验补丁必须真的生效，不能因为替换失败而静默放过
+        if (-not $KeepVersionChecks) {
+            $setupText = [System.IO.File]::ReadAllText((Join-Path $pkgDir.FullName "Setup.ps1"))
+            $launchText = [System.IO.File]::ReadAllText((Join-Path $pkgDir.FullName "Launch.ps1"))
+            if ($setupText -match "throw 'Unity engine changed") { $fail.Add("补丁未生效：Setup.ps1 仍会因 Unity 版本中止安装") }
+            if ($setupText -match "throw 'Game version file missing") { $fail.Add("补丁未生效：Setup.ps1 仍要求版本文件存在") }
+            if ($launchText -match "LaunchFingerprints") { $fail.Add("补丁未生效：Launch.ps1 仍比对构建指纹") }
+            if (-not (Test-Path (Join-Path $pkgDir.FullName "MODS-PATCH.md"))) { $fail.Add("缺少 MODS-PATCH.md（改动说明）") }
         }
     }
 }
