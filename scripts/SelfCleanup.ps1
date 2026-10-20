@@ -41,6 +41,48 @@ if ($names.Count -eq 0) { throw 'manifest.json has no CleanupFiles; refusing to 
 $failed = New-Object 'System.Collections.Generic.List[string]'
 $deleted = 0
 
+# ---- 先撤掉插件在运行期注入到主界面里的脚本 ----
+# ButlerMenu 启动时把菜单脚本写进 MainUI.html。这个页面不在安装器记录的受管清单里
+# （Setup.ps1 只管它自己打过标记的那 10 个容器页面），所以 RestoreState 不会碰它。
+# 不在这里处理，卸载后页面上会留下一个点了没反应的按钮和一段无人接收的脚本。
+$utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+$menuMarker = '<script id="survival-butler-menu-v1">'
+$mainUi = Join-Path $gameRoot 'SurvivalLog_Data\StreamingAssets\WebUI\UI\MainUI\MainUI.html'
+
+if (Test-Path -LiteralPath $mainUi) {
+    try {
+        $text = [IO.File]::ReadAllText($mainUi, [Text.Encoding]::UTF8)
+        $start = $text.IndexOf($menuMarker, [StringComparison]::Ordinal)
+        if ($start -ge 0) {
+            $closeTag = '</script>'
+            $end = $text.IndexOf($closeTag, $start, [StringComparison]::Ordinal)
+            if ($end -lt 0) { throw 'Injected menu script is incomplete.' }
+            $end += $closeTag.Length
+            # 连注入时补上的换行一起去掉，尽量还原成注入前的样子。
+            while ($start -gt 0 -and ($text[$start - 1] -eq "`n" -or $text[$start - 1] -eq "`r")) { $start-- }
+            while ($end -lt $text.Length -and ($text[$end] -eq "`n" -or $text[$end] -eq "`r")) { $end++ }
+            [IO.File]::WriteAllText($mainUi, ($text.Substring(0, $start) + $text.Substring($end)), $utf8NoBom)
+            Write-Host 'Removed the mod menu script from the main menu page.'
+        }
+    }
+    catch {
+        $failed.Add("SurvivalLog_Data\StreamingAssets\WebUI\UI\MainUI\MainUI.html (menu script left in place)")
+    }
+}
+
+# 插件自己留的页面备份目录不属于解压包，单独删。
+# 这些目录在游戏跑起来之后才会出现，重装时会按页面哈希再生成，留着只会越积越多。
+$ownBackupDirs = @(
+    'BepInEx\Butler-menu-backups',        # ButlerMenu：主界面页面
+    'BepInEx\ContainerPicker-backups'     # ContainerPicker：容器页面
+)
+foreach ($rel in $ownBackupDirs) {
+    $dir = Join-Path $gameRoot $rel
+    if (-not (Test-Path -LiteralPath $dir)) { continue }
+    try { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop } catch { }
+    if (Test-Path -LiteralPath $dir) { $failed.Add($rel) }
+}
+
 function Remove-One([string]$full) {
     # 以「删完之后文件还在不在」为准，而不是信任 Remove-Item 有没有抛异常：
     # 杀软 / 同步盘 / 文件占用插件可能在文件其实已删掉的情况下仍然报错，

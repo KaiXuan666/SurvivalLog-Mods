@@ -304,6 +304,73 @@ function Add-SelfCleanupManifest([string]$PkgDir, $Manifest, [string]$StageRoot)
     return $list.Count
 }
 
+function Relax-UninstallPageChecks([string]$PkgDir, $Manifest) {
+    # 卸载时上游要求「每个受管文件的内容仍等于安装时写下的哈希」，否则拒绝回滚。
+    # 但容器 UI / 制作台 UI 是本插件在**游戏运行期**改写这些页面的：只要玩过一次游戏，
+    # 页面哈希就必然与安装记录不同，用户会看到
+    #   File changed after installation; refusing to overwrite: ...BackpackUI.html
+    # 然后永远卸不掉。这里把「受管的游戏页面在运行期被改写」视为正常，仍按 .state 备份
+    # 还原成原版；其余文件维持原有的严格校验，避免掩盖真正的损坏或人为修改。
+    #
+    # 与 Disable-VersionChecks 分开：这条关系到卸载能否走通，不应该被 -KeepVersionChecks 关掉。
+    $patches = @(
+        @{
+            File = 'Setup.ps1'
+            Old  = @'
+function RestoreState($state) {
+    $configRestores=@{}
+    $preserveConfigs=@{}
+'@
+            New  = @'
+function RestoreState($state) {
+    $configRestores=@{}
+    $preserveConfigs=@{}
+    # 运行期被 mod 改写过的游戏页面：卸载时按备份还原，不视为文件损坏。
+    $runtimePages=@{}
+'@
+        },
+        @{
+            File = 'Setup.ps1'
+            Old  = @'
+            } elseif($r.Path -like 'BepInEx\config\*.cfg') {
+                $preserveConfigs[$r.Path]=$true
+            } else {throw "File changed after installation; refusing to overwrite: $($r.Path)"}
+'@
+            New  = @'
+            } elseif($r.Path -like 'BepInEx\config\*.cfg') {
+                $preserveConfigs[$r.Path]=$true
+            } elseif($r.Path -like '*StreamingAssets/WebUI/UI/*.html' -or $r.Path -like '*StreamingAssets\WebUI\UI\*.html') {
+                $runtimePages[$r.Path]=$true
+            } else {throw "File changed after installation; refusing to overwrite: $($r.Path)"}
+'@
+        },
+        @{
+            File = 'Setup.ps1'
+            Old  = @'
+        if($r.Before) {
+            $backup=SafePath $packageRoot $r.Backup
+            if((Hash $backup) -ne $r.Before){throw "Backup missing or damaged: $($r.Path)"}
+        }
+    }
+    for($ri=@($state.Files).Count-1; $ri -ge 0; $ri--) {
+'@
+            New  = @'
+        if($r.Before) {
+            $backup=SafePath $packageRoot $r.Backup
+            if((Hash $backup) -ne $r.Before){throw "Backup missing or damaged: $($r.Path)"}
+        }
+    }
+    if($runtimePages.Count -gt 0) {
+        Write-Host ("[mods] Restoring {0} game page(s) that mods rewrote while playing: {1}" -f $runtimePages.Count, (($runtimePages.Keys | Sort-Object) -join ', ')) -ForegroundColor DarkCyan
+    }
+    for($ri=@($state.Files).Count-1; $ri -ge 0; $ri--) {
+'@
+        }
+    )
+
+    return (Apply-TextPatches -PkgDir $PkgDir -Manifest $Manifest -Patches $patches -Label '卸载页面补丁')
+}
+
 function Disable-VersionChecks([string]$PkgDir, $Manifest) {
     # 上游把游戏版本 / Unity 版本当作安装门槛：Unity 版本不符直接 throw，
     # Launch.ps1 的构建指纹不符则进入安全模式（等于禁用 mod）。
@@ -567,6 +634,10 @@ else {
         $patchedFiles = Disable-VersionChecks -PkgDir $pkgDir.FullName -Manifest $manifest
         Write-Host "已移除版本硬校验：$($patchedFiles -join '、')" -ForegroundColor Cyan
     }
+
+    # --- 卸载时容忍「运行期被改写的游戏页面」：不受 -KeepVersionChecks 影响 ---
+    $relaxed = Relax-UninstallPageChecks -PkgDir $pkgDir.FullName -Manifest $manifest
+    Write-Host "已放宽卸载检查：运行期改写过的游戏页面按备份还原（$($relaxed -join '、')）" -ForegroundColor Cyan
 
     $manifest.Payload = @(@($manifest.Payload) | Where-Object { $_.Target -ne $relTarget }) +
         [pscustomobject]@{ Target = $relTarget; Source = $relSource }
@@ -886,6 +957,10 @@ try {
         }
         if ($setupOut -notmatch 'SelfCleanup\.ps1') { $fail.Add("自清理补丁未生效：Setup.ps1 未引用 SelfCleanup.ps1") }
         if (-not (Test-Path (Join-Path $pkgDir.FullName "SelfCleanup.ps1"))) { $fail.Add("缺少 SelfCleanup.ps1") }
+
+        # 卸载页面容错补丁：没有它，玩过游戏之后卸载会报 File changed after installation
+        if ($setupOut -notmatch '\$runtimePages') { $fail.Add("卸载页面补丁未生效：Setup.ps1 仍会因页面被运行期改写而拒绝卸载") }
+        if ($setupOut -notmatch 'StreamingAssets/WebUI/UI/\*\.html') { $fail.Add("卸载页面补丁未生效：Setup.ps1 没有识别游戏页面路径") }
 
         $cleanup = @($m.CleanupFiles)
         if ($cleanup.Count -eq 0) { $fail.Add("manifest 缺少 CleanupFiles（卸载后不会自清理）") }

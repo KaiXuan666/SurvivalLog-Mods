@@ -69,6 +69,12 @@
         '#sl-butler-panel .slb-row:last-of-type { margin-bottom: 0; }',
         '#sl-butler-panel .slb-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }',
         '#sl-butler-panel .slb-label { color: #CFC6B4; }',
+        // 主功能行：恒为开启、不可操作，用一块浅底色把它和可调的几行区分开。
+        '#sl-butler-panel .slb-row.slb-main {',
+        '  padding: 8px 10px; margin: 0 -4px 13px; border-radius: 6px;',
+        '  background: rgba(235,163,8,0.07); border: 1px solid rgba(235,163,8,0.18);',
+        '}',
+        '#sl-butler-panel .slb-row.slb-main .slb-hint { color: #9a927f; }',
         '#sl-butler-panel .slb-value { color: #EBA308; font-weight: 700; font-variant-numeric: tabular-nums; }',
         '#sl-butler-panel .slb-hint { color: #857D6D; font-size: 11px; margin-top: 5px; line-height: 1.45; }',
         '#sl-butler-panel .slb-dim { opacity: 0.38; pointer-events: none; }',
@@ -78,6 +84,9 @@
         '  background: #4a4438; transition: background 0.15s ease; flex: 0 0 auto;',
         '}',
         '#sl-butler-panel .slb-switch.slb-on { background: #4E9A51; }',
+        // 锁定的开关不接受任何操作：没有点击处理，也挡掉指针事件。
+        '#sl-butler-panel .slb-switch.slb-lock { cursor: default; pointer-events: none; }',
+        '#sl-butler-panel .slb-switch.slb-lock i { background: #DFF3E0; }',
         '#sl-butler-panel .slb-switch i {',
         '  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;',
         '  background: #F5F0E4; transition: transform 0.15s ease;',
@@ -93,10 +102,18 @@
         '  background: #EBA308; border: 1px solid rgba(0,0,0,0.45); cursor: pointer;',
         '}',
         '#sl-butler-panel .slb-toast {',
-        '  margin-top: 11px; padding-top: 8px; border-top: 1px solid rgba(235,163,8,0.18);',
-        '  color: #6BCB77; font-size: 11px; height: 14px; opacity: 0; transition: opacity 0.25s ease;',
+        '  margin-top: 9px; color: #6BCB77; font-size: 11px; height: 14px; opacity: 0;',
+        '  transition: opacity 0.25s ease;',
         '}',
-        '#sl-butler-panel .slb-toast.slb-show { opacity: 1; }'
+        '#sl-butler-panel .slb-toast.slb-show { opacity: 1; }',
+        // 底部常驻提示：说明插件本身处于启用状态，以及唯一的下线方式。
+        '#sl-butler-panel .slb-footer {',
+        '  margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(235,163,8,0.18);',
+        '  color: #8A8271; font-size: 11px; line-height: 1.6;',
+        '}',
+        '#sl-butler-panel .slb-footer code {',
+        '  color: #CFC6B4; font-family: Consolas, "Courier New", monospace; font-size: 11px;',
+        '}'
     ].join('\n');
 
     // 与侧栏其它图标同一套线性描边风格。
@@ -149,8 +166,9 @@
         var btn = document.getElementById(BTN_ID);
         if (!btn) return;
         // 关闭时把图标压暗，一眼能看出人物增强没开；开启时点一颗小绿点。
+        // 注意：这里反映的是「人物增强」，插件本体（主功能）始终在运行。
         btn.style.opacity = state.enabled ? '1' : '0.55';
-        btn.setAttribute('data-tooltip', state.enabled ? '生存助手（已开启）' : '生存助手（已关闭）');
+        btn.setAttribute('data-tooltip', state.enabled ? '生存助手（已开启）' : '生存助手（人物增强已关闭）');
         var dot = btn.querySelector('.side-dot');
         if (dot) {
             dot.style.display = state.enabled ? 'block' : 'none';
@@ -166,6 +184,14 @@
         panel.hidden = true;
         panel.innerHTML = [
             '<div class="slb-title"><span>生存助手</span><button class="slb-close" type="button">✕</button></div>',
+            // 主功能是插件本体，能打开这个面板就说明它在跑，所以恒为开启且不提供关闭。
+            // 不挂点击处理 + CSS 挡掉指针事件，双击/键盘都改不动它。
+            '<div class="slb-row slb-main">',
+            '  <div class="slb-head"><span class="slb-label">主功能</span>',
+            '    <div class="slb-switch slb-on slb-lock" data-role="main" role="switch" aria-checked="true" aria-disabled="true"><i></i></div>',
+            '  </div>',
+            '  <div class="slb-hint">插件本体，始终启用，无法在此关闭。</div>',
+            '</div>',
             '<div class="slb-row">',
             '  <div class="slb-head"><span class="slb-label">人物增强</span>',
             '    <div class="slb-switch" data-role="toggle"><i></i></div>',
@@ -180,7 +206,8 @@
             '  <div class="slb-head"><span class="slb-label">探索暴露度上限</span><span class="slb-value" data-role="exposure-text">x5</span></div>',
             '  <input type="range" min="1" max="20" step="1" value="5" data-role="exposure">',
             '</div>',
-            '<div class="slb-toast" data-role="toast"></div>'
+            '<div class="slb-toast" data-role="toast"></div>',
+            '<div class="slb-footer">生存助手已启用，如需卸载，请在游戏目录运行 <code>Uninstall.cmd</code>。</div>'
         ].join('');
         document.body.appendChild(panel);
 
@@ -220,6 +247,11 @@
     function render() {
         applyButtonState();
         var panel = ensurePanel();
+        // 主功能恒定开启：每次重绘都把它拨回 on，避免被外部脚本改动后状态不一致。
+        var main = panel.querySelector('[data-role=main]');
+        main.classList.add('slb-on');
+        main.setAttribute('aria-checked', 'true');
+
         var toggle = panel.querySelector('[data-role=toggle]');
         if (state.enabled) toggle.classList.add('slb-on');
         else toggle.classList.remove('slb-on');
