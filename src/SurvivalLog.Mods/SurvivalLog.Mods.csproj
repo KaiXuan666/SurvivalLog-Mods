@@ -22,6 +22,7 @@
     <Compile Include="ContainerPicker.cs" />
     <Compile Include="SceneContainerNames.cs" />
     <Compile Include="AutoClassifyNative.cs" />
+    <Compile Include="ToolTableRecipePeek.cs" />
   </ItemGroup>
 
   <ItemGroup>
