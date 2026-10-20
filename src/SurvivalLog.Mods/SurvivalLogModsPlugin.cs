@@ -30,6 +30,7 @@ namespace SurvivalLog.Mods
             // 容器增强：仅在检测到 HomeButler 页面时注入 WebUI 脚本。
             bool pickerReady = ContainerPickerInstaller.TryInstall(Log, Paths.GameRootPath);
 
+            ModLog.Info("[RecipePeek] Tool-table right-click guard active (RecipeClick/Make/DyePick).");
             Log.LogInfo("[SurvivalLog.Mods] Loaded. Character enhancement: on. HomeButler container picker: "
                 + (pickerReady ? "on" : "off (HomeButler not detected)") + ".");
         }
