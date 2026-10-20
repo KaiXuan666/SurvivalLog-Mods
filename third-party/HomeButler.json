@@ -1,5 +1,5 @@
 {
-  "$comment": "HomeButler 为第三方前置依赖，不在本仓库中分发。此文件仅记录本机已安装版本的来源与校验值，用于核对安装是否完整。",
+  "$comment": "HomeButler 为第三方前置依赖。源码经权利人授权收录于 third-party/homebutler/，编译产物不随仓库分发。此文件记录已安装版本的来源与校验值，用于核对安装是否完整。",
   "name": "HomeButler (BaseButler 适配整合包)",
   "version": "2.0.0",
   "packageTitle": "HomeButler-2.0.0-Package",
@@ -7,7 +7,8 @@
   "originalAuthor": "lingxiangtingsheng",
   "originalPage": "https://www.nexusmods.com/survivallog/mods/4",
   "packageMaintainer": "lingbaicat",
-  "redistribution": "不允许。原始授权明确未授予任意修改、商业使用或再分发权，详见 licenses/HomeButler-LICENSE.md。",
+  "redistribution": "源码经权利人授权收录于 third-party/homebutler/；编译产物不随仓库分发，请从上游获取。原始条款见 licenses/HomeButler-LICENSE.md，授权依据见 licenses/HomeButler-AUTHORIZATION.md。",
+  "sourceIncluded": "third-party/homebutler/source",
   "requiredPluginGuid": "local.survivallog.homeaccess",
   "files": [
     {

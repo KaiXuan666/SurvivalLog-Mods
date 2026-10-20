@@ -8,7 +8,7 @@
 | --- | --- |
 | 人物增强 | 移动速度 ×3、探索暴露度上限 ×5 |
 | HomeButler 容器下拉选择 | 容器下拉箭头与菜单、页签拖放桥接、自动归类、制作台配方右键 |
-| HomeButler | **第三方前置依赖，不在此仓库分发**（见下文） |
+| HomeButler | **第三方前置依赖**，源码收录于 `third-party/homebutler/`，编译产物不随仓库分发（见下文） |
 
 ## 前置条件
 
@@ -18,15 +18,19 @@
 
 ### 关于 HomeButler
 
-HomeButler 由原作者 lingxiangtingsheng 创作、维护者 lingbaicat 适配整合，其授权条款明确**未授予任意修改、商业使用或再分发权**。因此本仓库：
+HomeButler 由原作者 lingxiangtingsheng 创作、维护者 lingbaicat 适配整合。本仓库对其内容的收录范围：
 
-- 不包含 HomeButler 的源码或编译产物（DLL）；
-- 仅在 [`third-party/HomeButler.json`](third-party/HomeButler.json) 中记录本机已安装版本的来源、文件大小与 SHA-256，用于核对；
-- 保留原始许可文本 [`licenses/HomeButler-LICENSE.md`](licenses/HomeButler-LICENSE.md) 以完成署名。
+| 内容 | 是否收录 | 说明 |
+| --- | --- | --- |
+| `source/` 源码 | ✅ 收录 | 经权利人授权，位于 `third-party/homebutler/source/` |
+| 上游 README、CHANGELOG | ✅ 收录 | 保留原始说明与变更记录 |
+| 原始许可文本 | ✅ 收录 | [`licenses/HomeButler-LICENSE.md`](licenses/HomeButler-LICENSE.md) |
+| 编译产物（5 个 `BaseButler*.dll`） | ❌ 不收录 | 请从上游获取，或用 [`third-party/HomeButler.json`](third-party/HomeButler.json) 中的 SHA-256 核对本机安装 |
+| 安装器与运行时（`Setup.ps1`、`Launch.ps1`、`payload/`、`manifest.json`） | ❌ 不收录 | 属于打包与部署产物，非源码 |
 
-请前往上游地址获取：<https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat>
+授权依据见 [`licenses/HomeButler-AUTHORIZATION.md`](licenses/HomeButler-AUTHORIZATION.md)。上游地址：<https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat>
 
-如已取得维护者的书面再分发授权，可将 HomeButler 源码放入 `third-party/homebutler/` 后再行提交。
+注意：仓库收录源码**不等于**将其重新许可。HomeButler 部分仍适用其原始条款，本仓库未对其授予任何额外权利。
 
 ## 构建
 

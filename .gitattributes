@@ -7,3 +7,6 @@
 *.json text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
+
+# 放在最后以覆盖上面的规则：第三方收录的源码保持上游原样，不做换行符规范化
+third-party/homebutler/** -text
