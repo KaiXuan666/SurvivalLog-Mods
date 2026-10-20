@@ -230,8 +230,12 @@ namespace SurvivalLog.Mods
 
                 long owner = ((BaseEntity)furniture).InstanceId;
                 int config = furniture.AgentConfigId;
+                BarState previous;
+                states.TryGetValue(key, out previous);
                 if (!ContainerLabelStore.TryResolve(owner, config, out string display, out string reason))
                 {
+                    // 名称被清空（留空恢复）时把名称栏还原成游戏原名。
+                    if (previous != null && !string.IsNullOrEmpty(previous.Display)) Restore(bar, previous);
                     // 绝大多数家具本来就没有自定义名，只记前几条未命中，避免刷日志。
                     states[key] = new BarState { NextResolveFrame = Time.frameCount + 120 };
                     if (missLogs < 5)
@@ -243,10 +247,17 @@ namespace SurvivalLog.Mods
                     return;
                 }
 
+                // 记住游戏原名，供「清空自定义名」时还原。
+                string original = previous != null && !string.IsNullOrEmpty(previous.Original)
+                    ? previous.Original
+                    : bar._baseName;
+                if (string.Equals(original, display, StringComparison.Ordinal)) original = null;
+
                 states[key] = new BarState
                 {
                     Owner = owner,
                     Display = display,
+                    Original = original,
                     NextResolveFrame = Time.frameCount + 16
                 };
                 if (states.Count > 512) states.Clear();
@@ -286,10 +297,25 @@ namespace SurvivalLog.Mods
             if (text != null && !string.Equals(current, composed, StringComparison.Ordinal)) text.text = composed;
         }
 
+        private static void Restore(FurnitureHeadBar bar, BarState state)
+        {
+            if (string.IsNullOrEmpty(state.Original)) return;
+            Text text = bar.Text_Name;
+            string current = text == null ? null : text.text;
+            bar._baseName = state.Original;
+            if (text != null && !string.IsNullOrEmpty(current)
+                && !string.IsNullOrEmpty(state.Display)
+                && current.StartsWith(state.Display, StringComparison.Ordinal))
+            {
+                text.text = state.Original + current.Substring(state.Display.Length);
+            }
+        }
+
         private sealed class BarState
         {
             internal long Owner;
             internal string Display;
+            internal string Original;
             internal int NextResolveFrame;
         }
 
