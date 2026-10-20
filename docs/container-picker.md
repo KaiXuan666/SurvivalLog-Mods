@@ -34,7 +34,15 @@ ToolTable 制作笔记中的配方支持右键选择：通过原生配方选择�
 
 ## 场景家具名称
 
-场景家具提示栏的显示名称会在游戏原生 `FurnitureHeadBar.SetDisplayName` 入口查询 HomeButler 容器目录；家具有自定义名称时显示自定义名和序号，没有则保留游戏原名。
+长按 Alt 显示的场景名称来自游戏自己的名称栏（`FurnitureHeadBar`），它读的是家具配置里的原名，与 HomeButler 的自定义名称没有任何关系。插件在名称栏的渲染边界接管：
+
+- 挂接 `FurnitureHeadBar.SetName`、`SetDisplayName`、`ApplyNameWithSearchCount` 与 `OnUpdate`，任一入口写入文本后都用自定义名覆盖；
+- 同时把名称栏的 `_baseName` 改成自定义名，游戏后续重排（如搜索计数 `名称 (12)`）会沿用自定义名，只替换名称部分、保留后缀；
+- `OnUpdate` 每帧回写、每 16 帧重新解析目录，改名后约 0.3 秒内场景同步，不需要重新进出场景；
+- 家具定位依次尝试名称栏 `Target` 自身、向上最多 8 层父节点、直接子节点，最后退回 `showInstanceId` 到 `AgentManager.GetAgent` 取逻辑对象——名称栏挂在模型子节点时也能命中；
+- 目录按存档内稳定实例 id 存，场景里是运行时实例 id，通过 HomeButler 的 `loadedIds` 映射换算；同一实例换了家具类型时不沿用旧名。
+
+日志里搜索 `[SceneNames]` 可看到挂接了哪些方法、哪些家具命中了自定义名。HomeButler 缺失时本功能自动静默跳过，家具仍显示原名。
 
 ## 注入与安全
 

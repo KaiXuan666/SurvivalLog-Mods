@@ -20,6 +20,7 @@
     <Compile Include="ModLog.cs" />
     <Compile Include="CharacterEnhancement.cs" />
     <Compile Include="ContainerPicker.cs" />
+    <Compile Include="SceneContainerNames.cs" />
     <Compile Include="AutoClassifyNative.cs" />
   </ItemGroup>
 
@@ -38,5 +39,6 @@
     <Reference Include="Il2Cppmscorlib"><HintPath>$(GameDir)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="HotUpdate"><HintPath>$(GameDir)\BepInEx\interop\HotUpdate.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameDir)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(GameDir)\BepInEx\interop\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

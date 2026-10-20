@@ -18,8 +18,11 @@ namespace SurvivalLog.Mods
             ModLog.Attach(Log);
             var harmony = new Harmony(HarmonyId);
 
-            // 反射入口补丁：场景家具名称栏、自动归类消息回调。
+            // 反射入口补丁：自动归类消息回调。
             harmony.PatchAll(typeof(SurvivalLogModsPlugin).Assembly);
+
+            // 场景名称栏：把 HomeButler 的自定义容器名接到长按 Alt 显示的名称上。
+            SceneContainerNames.Install(harmony, Log);
 
             // 人物增强：移动速度 x3、探索暴露度上限 x5。
             CharacterEnhancement.Apply(harmony, Log);
