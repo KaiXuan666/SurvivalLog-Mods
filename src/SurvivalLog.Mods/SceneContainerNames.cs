@@ -141,8 +141,8 @@ namespace SurvivalLog.Mods
     {
         private static readonly HashSet<string> logged = new HashSet<string>();
         private static readonly Dictionary<IntPtr, BarState> states = new Dictionary<IntPtr, BarState>();
-        private static readonly PropertyInfo showInstanceId =
-            AccessTools.Property(typeof(BaseHeadBar), "showInstanceId");
+        private static PropertyInfo showInstanceId;
+        private static bool showInstanceIdResolved;
         private static bool installTried;
         private static int missLogs;
 
@@ -352,6 +352,11 @@ namespace SurvivalLog.Mods
         {
             try
             {
+                if (!showInstanceIdResolved)
+                {
+                    showInstanceIdResolved = true;
+                    showInstanceId = AccessTools.Property(typeof(BaseHeadBar), "showInstanceId");
+                }
                 if (showInstanceId == null) return 0;
                 object value = showInstanceId.GetValue(bar);
                 return value == null ? 0 : Convert.ToInt64(value);
