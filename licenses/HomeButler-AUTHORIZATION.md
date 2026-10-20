@@ -16,7 +16,7 @@
 | `source/` 源码（`.cs`、`.js`、`.csproj`、测试与校验脚本） | 已收录，用于查阅与维护（原作者与维护者均已许可） |
 | 上游 README、CHANGELOG | 已收录，保留原始说明 |
 | 原始许可文本 | 已收录，见 `HomeButler-LICENSE.md` |
-| 编译产物 `BaseButler*.dll` | 未收录 |
+| 编译产物 `BaseButler*.dll` | 仓库不收录；随 Release 的安装包（zip）分发，便于解压即用 |
 | 安装器、运行时与打包清单（`Setup.ps1`、`Launch.ps1`、`payload/`、`manifest.json`、`validation/`） | 未收录 |
 | 游戏代码、素材、商标及生成的游戏程序集 | 未收录，且本项目不授予其使用权 |
 

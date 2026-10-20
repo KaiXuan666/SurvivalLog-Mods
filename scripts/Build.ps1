@@ -14,33 +14,48 @@ $ErrorActionPreference = "Stop"
 
 $project = Join-Path $PSScriptRoot "..\src\SurvivalLog.Mods\SurvivalLog.Mods.csproj"
 
-function Find-Dotnet {
-    $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
+function Test-DotnetSdk {
+    param([string]$Exe)
+    if (-not (Test-Path $Exe)) { return $false }
+    # Windows PowerShell 5.1 会把原生命令的 stderr 当成错误记录，这里临时放开
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $sdks = & $Exe --list-sdks 2>&1
+        if ($LASTEXITCODE -ne 0 -or -not $sdks) { return $false }
+        $lines = @($sdks | Where-Object { $_ -is [string] -and $_ -match '^\d+\.\d+' })
+        return ($lines.Count -gt 0)
+    }
+    finally { $ErrorActionPreference = $previous }
+}
 
-    $known = @(
+function Find-Dotnet {
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($cmd) { $candidates.Add($cmd.Source) }
+
+    foreach ($p in @(
         "F:\DevTools\dotnet\dotnet.exe",
         "C:\Program Files\dotnet\dotnet.exe",
-        "${env:LOCALAPPDATA}\Microsoft\dotnet\dotnet.exe"
-    )
-    foreach ($p in $known) {
-        if (Test-Path $p) {
-            $env:DOTNET_ROOT = Split-Path -Parent $p
-            return $p
-        }
-    }
+        "${env:LOCALAPPDATA}\Microsoft\dotnet\dotnet.exe",
+        "C:\Program Files (x86)\dotnet\dotnet.exe"
+    )) { $candidates.Add($p) }
 
     foreach ($root in @("C:\", "E:\", "F:\")) {
-        $hit = Get-ChildItem -Path $root -Filter dotnet.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue |
-               Where-Object { $_.FullName -notmatch "\\sdk\\" } |
-               Select-Object -First 1
-        if ($hit) {
-            $env:DOTNET_ROOT = $hit.DirectoryName
-            return $hit.FullName
+        Get-ChildItem -Path $root -Filter dotnet.exe -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch "\\sdk\\|\\shared\\" } |
+            ForEach-Object { $candidates.Add($_.FullName) }
+    }
+
+    foreach ($c in ($candidates | Select-Object -Unique)) {
+        if (Test-DotnetSdk -Exe $c) {
+            $env:DOTNET_ROOT = Split-Path -Parent $c
+            return $c
         }
     }
 
-    throw "未找到 .NET 6 SDK，请先安装：https://aka.ms/dotnet/download"
+    throw "未找到可用的 .NET SDK（需要能构建 net6.0），请先安装：https://aka.ms/dotnet/download"
 }
 
 if (-not (Test-Path $GameDir)) {

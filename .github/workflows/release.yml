@@ -1,0 +1,170 @@
+name: Package & Release
+
+# 构建并打包成「解压到游戏目录即可用」的 zip。
+#
+# 为什么必须用自托管 runner：
+#   编译需要游戏本机生成的 BepInEx\interop（HotUpdate.dll 34MB、Il2Cppmscorlib.dll 6MB）。
+#   这些是 IL2CPP 从游戏本体生成的程序集，属于游戏版权文件，不能提交到仓库，
+#   也无法在 GitHub 托管的 runner 上获得。因此本工作流必须在已安装游戏的 Windows
+#   机器上运行（注册一次 self-hosted runner 即可，见 docs/BUILD-CI.md）。
+#
+# 触发方式：
+#   1. 推送 v* 标签  → 构建、打包、创建 Release 并附上 zip
+#   2. 手动触发      → 构建、打包、上传 artifact（可选创建 Release）
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空则读取 csproj 中的 Version）"
+        required: false
+        type: string
+      game_dir:
+        description: "游戏安装目录（留空则用 runner 上的 SURVIVALLOG_GAME_DIR 或默认路径）"
+        required: false
+        type: string
+      publish_release:
+        description: "构建后创建 GitHub Release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DEFAULT_GAME_DIR: 'F:\platform\Steam\steamapps\common\Survival Log'
+
+jobs:
+  package:
+    name: Build and package
+    # 默认标签：自托管 + Windows + x64。runner 未就绪时任务会排队等待，不会失败。
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 解析游戏目录
+        id: game
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+
+          $candidates = @(
+            '${{ inputs.game_dir }}',
+            $env:SURVIVALLOG_GAME_DIR,
+            $env:DEFAULT_GAME_DIR
+          ) | Where-Object { $_ -and $_.Trim() } | Select-Object -Unique
+
+          $required = @('BepInEx\interop\HotUpdate.dll', 'BepInEx\interop\Il2Cppmscorlib.dll')
+          $chosen = $null
+          foreach ($dir in $candidates) {
+            $dir = $dir.TrimEnd('\')
+            $missing = $required | Where-Object { -not (Test-Path (Join-Path $dir $_)) }
+            if (-not $missing) { $chosen = $dir; break }
+          }
+
+          if (-not $chosen) {
+            Write-Host '尝试过的目录：'
+            $candidates | ForEach-Object { Write-Host "  - $_" }
+            Write-Host ''
+            Write-Host '未找到包含 BepInEx\interop 的游戏目录。' -ForegroundColor Red
+            Write-Host '请确认：' -ForegroundColor Yellow
+            Write-Host '  1) runner 上已安装《生存日志》并至少启动过一次（interop 由游戏生成）；'
+            Write-Host '  2) 目录正确：可设置仓库变量 SURVIVALLOG_GAME_DIR，或用 workflow_dispatch 的 game_dir 参数。'
+            exit 1
+          }
+
+          Write-Host "游戏目录: $chosen"
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "game_dir=$chosen`n", $utf8)
+
+      - name: 计算版本号
+        id: ver
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+
+          $version = '${{ inputs.version }}'
+          if (-not $version -and '${{ github.ref_type }}' -eq 'tag') {
+            $version = '${{ github.ref_name }}' -replace '^v', ''
+          }
+          if (-not $version) {
+            [xml]$proj = Get-Content 'src\SurvivalLog.Mods\SurvivalLog.Mods.csproj' -Raw -Encoding UTF8
+            $version = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          }
+          if (-not $version) { throw '无法确定版本号。' }
+
+          Write-Host "版本: $version"
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "version=$version`n", $utf8)
+
+      - name: 构建并打包
+        id: pack
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Package.ps1 -GameDir '${{ steps.game.outputs.game_dir }}' -Version '${{ steps.ver.outputs.version }}'
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SurvivalLog.Mods-${{ steps.ver.outputs.version }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 生成 Release 说明
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $body = @"
+          ## 安装
+
+          1. 完全退出游戏。
+          2. 将 zip 内所有内容解压到游戏根目录（包含 ``BepInEx`` 文件夹的那一层）：
+             ``...\steamapps\common\Survival Log\``
+          3. 启动游戏。
+
+          包内已包含 HomeButler 前置组件，无需另行下载。
+
+          ## 校验
+
+          ```
+          ${{ steps.pack.outputs.zip_name }}
+          SHA256 ${{ steps.pack.outputs.zip_sha256 }}
+          ```
+
+          ## 从旧版升级
+
+          若曾安装分开的插件，请先删除 ``BepInEx\plugins\SurvivalLog.CharacterEnhancement.dll``
+          与 ``BepInEx\plugins\SurvivalLog.ContainerPicker.dll``，否则会重复 patch。
+
+          ## 内容
+
+          - 人物增强：移动速度 ×3、探索暴露度上限 ×5
+          - 容器增强：背包容器下拉选择、拖放目标、自动归类、制作台配方右键
+
+          HomeButler 由 lingxiangtingsheng 创作、lingbaicat 维护，许可与授权说明见包内 ``licenses\``。
+          "@
+          Set-Content -Path 'release-notes.md' -Value $body -Encoding UTF8
+          Get-Content 'release-notes.md' -TotalCount 5
+
+      - name: 创建 Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.ver.outputs.version) }}
+          name: SurvivalLog.Mods ${{ steps.ver.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*.zip
+          fail_on_unmatched_files: true
