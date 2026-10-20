@@ -12,7 +12,7 @@ using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace SurvivalLog.Mods
+namespace SurvivalLog.Butler
 {
     // HomeButler 只把自定义容器名存在自己的目录 JSON 里，游戏的名称栏（长按 Alt 显示）
     // 仍然读家具配置里的原名。这里在名称栏的渲染边界把两者接上：

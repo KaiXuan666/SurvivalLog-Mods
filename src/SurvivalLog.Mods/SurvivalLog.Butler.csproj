@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <AssemblyName>SurvivalLog.Mods</AssemblyName>
-    <RootNamespace>SurvivalLog.Mods</RootNamespace>
+    <AssemblyName>SurvivalLog.Butler</AssemblyName>
+    <RootNamespace>SurvivalLog.Butler</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="SurvivalLogModsPlugin.cs" />
+    <Compile Include="SurvivalLogButlerPlugin.cs" />
     <Compile Include="ModLog.cs" />
     <Compile Include="CharacterEnhancement.cs" />
     <Compile Include="ContainerPicker.cs" />

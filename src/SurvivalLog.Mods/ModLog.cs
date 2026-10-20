@@ -1,6 +1,6 @@
 using BepInEx.Logging;
 
-namespace SurvivalLog.Mods
+namespace SurvivalLog.Butler
 {
     // 合并后的单一插件里，各功能模块共用一个 BepInEx 日志源。
     internal static class ModLog

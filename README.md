@@ -1,4 +1,4 @@
-# SurvivalLog-Mods
+# Survival Butler
 
 《生存日志》（Survival Log）的一体化 BepInEx IL2CPP 插件。
 
@@ -39,8 +39,8 @@ HomeButler 由原作者 lingxiangtingsheng 创作、维护者 lingbaicat 适配�
 
 | 包 | 文件名 | 适用场景 |
 | --- | --- | --- |
-| **完整包**（推荐） | `SurvivalLog.Mods-<版本>-full.zip` | 从零安装，或没装过 HomeButler。含 BepInEx 6、Doorstop、.NET 运行时、Unity 基础库、HomeButler 与插件本体 |
-| 增量包 | `SurvivalLog.Mods-<版本>-lite.zip` | **已经装好 HomeButler 2.0.0**，只想更新本插件 |
+| **完整包**（推荐） | `Survival.Butler-<版本>-full.zip` | 从零安装，或没装过 HomeButler。含 BepInEx 6、Doorstop、.NET 运行时、Unity 基础库、HomeButler 与插件本体 |
+| 增量包 | `Survival.Butler-<版本>-lite.zip` | **已经装好 HomeButler 2.0.0**，只想更新本插件 |
 
 ### 完整包（三步）
 
@@ -78,12 +78,12 @@ HomeButler 离线包不在默认搜索路径时，用 `-BasePackage` 指定：
 或手动构建：
 
 ```powershell
-dotnet build .\src\SurvivalLog.Mods\SurvivalLog.Mods.csproj -c Release
+dotnet build .\src\SurvivalLog.Mods\SurvivalLog.Butler.csproj -c Release
 ```
 
 游戏安装目录不同时用 `-p:GameDir="完整路径"` 覆盖（脚本对应参数为 `-GameDir`）。
 
-**先关闭游戏**，再把 `SurvivalLog.Mods.dll` 放进 `BepInEx\plugins\`；或直接运行：
+**先关闭游戏**，再把 `SurvivalLog.Butler.dll` 放进 `BepInEx\plugins\`；或直接运行：
 
 ```powershell
 .\scripts\Install.ps1

@@ -116,7 +116,7 @@ jobs:
             $version = '${{ github.ref_name }}' -replace '^v', ''
           }
           if (-not $version) {
-            [xml]$proj = Get-Content 'src\SurvivalLog.Mods\SurvivalLog.Mods.csproj' -Raw -Encoding UTF8
+            [xml]$proj = Get-Content 'src\SurvivalLog.Mods\SurvivalLog.Butler.csproj' -Raw -Encoding UTF8
             $version = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
           }
           if (-not $version) { throw '无法确定版本号。' }
@@ -188,7 +188,7 @@ jobs:
       - name: 上传 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SurvivalLog.Mods-${{ steps.ver.outputs.version }}
+          name: SurvivalLog.Butler-${{ steps.ver.outputs.version }}
           path: dist/*.zip
           if-no-files-found: error
           retention-days: 30
@@ -202,8 +202,8 @@ jobs:
 
           | 包 | 适用 |
           | --- | --- |
-          | ``SurvivalLog.Mods-${{ steps.ver.outputs.version }}-full.zip`` | **推荐**。从零安装，或没装过 HomeButler。已内置 BepInEx 6、Doorstop、.NET 运行时、Unity 基础库与 HomeButler |
-          | ``SurvivalLog.Mods-${{ steps.ver.outputs.version }}-lite.zip`` | 已装好 HomeButler 2.0.0，只想更新本插件 |
+          | ``Survival.Butler-${{ steps.ver.outputs.version }}-full.zip`` | **推荐**。从零安装，或没装过 HomeButler。已内置 BepInEx 6、Doorstop、.NET 运行时、Unity 基础库与 HomeButler |
+          | ``Survival.Butler-${{ steps.ver.outputs.version }}-lite.zip`` | 已装好 HomeButler 2.0.0，只想更新本插件 |
 
           ## 完整包安装（三步）
 
@@ -246,7 +246,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.ver.outputs.version) }}
-          name: SurvivalLog.Mods ${{ steps.ver.outputs.version }}
+          name: Survival Butler ${{ steps.ver.outputs.version }}
           body_path: release-notes.md
           files: dist/*.zip
           fail_on_unmatched_files: true

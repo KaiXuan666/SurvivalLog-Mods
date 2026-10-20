@@ -71,7 +71,7 @@ runner 上不需要预装 HomeButler，也不需要保留那 5 个 `BaseButler*.
 
 ```powershell
 # 1. 改版本号
-#    src\SurvivalLog.Mods\SurvivalLog.Mods.csproj 里的 <Version>
+#    src\SurvivalLog.Mods\SurvivalLog.Butler.csproj 里的 <Version>
 
 # 2. 提交并打标签
 git commit -am "chore: bump version to 1.1.0"
@@ -95,7 +95,7 @@ Actions → Package & Release → Run workflow
 
 产物有两种，都对应游戏根目录：
 
-**完整包** `SurvivalLog.Mods-<版本>-full.zip`（约 35 MB，285 个文件）
+**完整包** `Survival.Butler-<版本>-full.zip`（约 35 MB，285 个文件）
 
 ```
 安装说明.txt
@@ -112,7 +112,7 @@ HomeButler-2.0.0-Package/
     BepInEx/core/        ← BepInEx 6 IL2CPP 加载器
     BepInEx/unity-libs/  ← Unity 6000.2.7 基础库（生成 interop 用）
     BepInEx/plugins/
-      SurvivalLog.Mods.dll        ← 本插件
+      SurvivalLog.Butler.dll        ← 本插件
       BaseButler*.dll ×5          ← HomeButler
 ```
 
@@ -147,11 +147,11 @@ HomeButler-2.0.0-Package/
 
 改动记录会写入包内 `HomeButler-2.0.0-Package/MODS-PATCH.md`。
 
-**增量包** `SurvivalLog.Mods-<版本>-lite.zip`（几十 KB）
+**增量包** `Survival.Butler-<版本>-lite.zip`（几十 KB）
 
 ```
 安装说明.txt
-BepInEx/plugins/SurvivalLog.Mods.dll
+BepInEx/plugins/SurvivalLog.Butler.dll
 licenses/
 ```
 

@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-构建 SurvivalLog.Mods 并安装到游戏目录的 BepInEx\plugins\。
+构建 SurvivalLog.Butler 并安装到游戏目录的 BepInEx\plugins\。
 游戏正在运行时会中止，避免覆盖正在使用的文件。
 #>
 [CmdletBinding()]
@@ -24,9 +24,9 @@ if ($gameRunning) {
 
 & (Join-Path $PSScriptRoot "Build.ps1") -GameDir $GameDir -Configuration $Configuration
 
-$src = Join-Path $PSScriptRoot "..\src\SurvivalLog.Mods\bin\$Configuration\net6.0\SurvivalLog.Mods.dll"
+$src = Join-Path $PSScriptRoot "..\src\SurvivalLog.Mods\bin\$Configuration\net6.0\SurvivalLog.Butler.dll"
 if (-not (Test-Path $src)) { throw "未找到构建输出：$src" }
 
 Copy-Item $src -Destination $pluginsDir -Force
-Write-Host "已安装到: $(Join-Path $pluginsDir 'SurvivalLog.Mods.dll')" -ForegroundColor Green
+Write-Host "已安装到: $(Join-Path $pluginsDir 'SurvivalLog.Butler.dll')" -ForegroundColor Green
 Write-Host "请启动游戏，并检查 BepInEx\LogOutput.log 中的加载信息。" -ForegroundColor Yellow

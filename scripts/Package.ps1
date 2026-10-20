@@ -9,7 +9,7 @@
     这些是插件运行的必需条件，单独一个 DLL 在干净游戏上不会被加载。
 
   增量包（-Lite）
-    只含 BepInEx\plugins\SurvivalLog.Mods.dll，供已装好 HomeButler 的用户升级。
+    只含 BepInEx\plugins\SurvivalLog.Butler.dll，供已装好 HomeButler 的用户升级。
 
   完整包还会把上游的游戏版本 / Unity 版本硬校验降级为提示（见 Disable-VersionChecks），
   因为游戏小版本更新后 mod 通常仍可用。需要保留上游行为时加 -KeepVersionChecks。
@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $repoRoot "src\SurvivalLog.Mods\SurvivalLog.Mods.csproj"
+$project = Join-Path $repoRoot "src\SurvivalLog.Mods\SurvivalLog.Butler.csproj"
 $manifestPath = Join-Path $repoRoot "third-party\HomeButler.json"
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $utf8Bom = [System.Text.UTF8Encoding]::new($true)
@@ -175,7 +175,7 @@ function Find-BasePackage {
 }
 
 # ---- 构建 -----------------------------------------------------------------
-$dll = Join-Path $repoRoot "src\SurvivalLog.Mods\bin\$Configuration\net6.0\SurvivalLog.Mods.dll"
+$dll = Join-Path $repoRoot "src\SurvivalLog.Mods\bin\$Configuration\net6.0\SurvivalLog.Butler.dll"
 
 if (-not $SkipBuild) {
     $interop = Join-Path $GameDir "BepInEx\interop\HotUpdate.dll"
@@ -201,7 +201,7 @@ if (Test-Path $stage) { [System.IO.Directory]::Delete($stage, $true) }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 $installNotes = @"
-SurvivalLog.Mods $Version —— 安装说明
+Survival Butler $Version —— 安装说明
 =====================================
 
 本插件运行在 BepInEx 6 (IL2CPP) 之上，并依赖 HomeButler 2.0.0 提供的容器接口。
@@ -214,7 +214,7 @@ SurvivalLog.Mods $Version —— 安装说明
      解压后应有：
        ...\Survival Log\安装说明.txt（本文件）
        ...\Survival Log\HomeButler-2.0.0-Package\（保留，卸载时用）
-       ...\Survival Log\BepInEx\plugins\SurvivalLog.Mods.dll
+       ...\Survival Log\BepInEx\plugins\SurvivalLog.Butler.dll
   3. 双击 Install.cmd，确认显示安装成功。
 
   Install.cmd 会写入 Doorstop 与 BepInEx 配置、注入页面脚本。
@@ -234,7 +234,7 @@ SurvivalLog.Mods $Version —— 安装说明
   · 容器增强：背包容器下拉选择、拖放目标、自动归类、制作台配方右键。
 
 排查
-  用 ViewLog.cmd 打开 BepInEx\LogOutput.log，搜索 "SurvivalLog.Mods"。
+  用 ViewLog.cmd 打开 BepInEx\LogOutput.log，搜索 "Survival Butler"。
   未检测到 HomeButler 页面标记时，容器功能会跳过并在日志中说明，人物增强仍生效。
 
 卸载
@@ -265,7 +265,7 @@ if ($Lite) {
     }
 
     $installNotes = @"
-SurvivalLog.Mods $Version —— 增量包安装说明
+Survival Butler $Version —— 增量包安装说明
 ==========================================
 ★ 这是增量包，不是完整安装包 ★
 
@@ -291,7 +291,7 @@ SurvivalLog.Mods $Version —— 增量包安装说明
   · 容器增强：背包容器下拉选择、拖放目标、自动归类、制作台配方右键。
 
 排查
-  查看 BepInEx\LogOutput.log，搜索 "SurvivalLog.Mods"。
+  查看 BepInEx\LogOutput.log，搜索 "Survival Butler"。
 
 第三方组件
   HomeButler（BaseButler）由 lingxiangtingsheng 创作、lingbaicat 维护；
@@ -328,8 +328,8 @@ else {
     # --- 更新 manifest：Payload 与 PackageFiles 各加一条 ---
     $mPath = Join-Path $pkgDir.FullName "manifest.json"
     $manifest = Get-Content $mPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $relSource = "payload/BepInEx/plugins/SurvivalLog.Mods.dll"
-    $relTarget = "BepInEx\plugins\SurvivalLog.Mods.dll"
+    $relSource = "payload/BepInEx/plugins/SurvivalLog.Butler.dll"
+    $relTarget = "BepInEx\plugins\SurvivalLog.Butler.dll"
 
     # --- 移除上游的版本硬校验（需在写回 manifest 之前完成，以便同步哈希） ---
     $patchedFiles = @()
@@ -367,14 +367,14 @@ else {
         $extra = @"
 
 ────────────────────────────────────────────────────────────────
-本包已加入 SurvivalLog.Mods $Version（人物增强 + 容器增强整合插件）
+本包已加入 Survival Butler $Version（人物增强 + 容器增强整合插件）
 ────────────────────────────────────────────────────────────────
 安装步骤与上文「三步安装」完全相同，无需额外操作。
-插件源文件：HomeButler-2.0.0-Package\payload\BepInEx\plugins\SurvivalLog.Mods.dll
-安装后位置：BepInEx\plugins\SurvivalLog.Mods.dll
+插件源文件：HomeButler-2.0.0-Package\payload\BepInEx\plugins\SurvivalLog.Butler.dll
+安装后位置：BepInEx\plugins\SurvivalLog.Butler.dll
 功能：移动速度 x3、探索暴露度上限 x5；背包容器下拉选择、拖放目标、
       自动归类、制作台配方右键。
-排查：ViewLog.cmd 打开 BepInEx\LogOutput.log，搜索 "SurvivalLog.Mods"。
+排查：ViewLog.cmd 打开 BepInEx\LogOutput.log，搜索 "Survival Butler"。
 卸载：运行 Uninstall.cmd 会一并撤销本插件。
 许可：HomeButler-2.0.0-Package\licenses\ 与本包 licenses\ 目录。
 
@@ -390,7 +390,7 @@ $versionNote
         $patchDoc = @"
 # 对 HomeButler 离线包所做的改动
 
-本包由 SurvivalLog.Mods 的打包脚本（`scripts/Package.ps1`）在**解压官方离线包之后**生成，
+本包由 Survival Butler 的打包脚本（`scripts/Package.ps1`）在**解压官方离线包之后**生成，
 仅对下列文件做了文本替换，其余文件与上游逐字节一致。
 
 ## 改动目的
@@ -432,7 +432,7 @@ $versionNote
     if (Test-Path $relPath) {
         $rel = Get-Content $relPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $rel | Add-Member -NotePropertyName "mods" -NotePropertyValue ([pscustomobject]@{
-            name    = "SurvivalLog.Mods"
+            name    = "Survival Butler"
             version = $Version
             source  = "https://github.com/KaiXuan666/SurvivalLog-Mods"
         }) -Force
@@ -445,7 +445,7 @@ $versionNote
 # ---- 打包 -------------------------------------------------------------
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $edition = if ($Lite) { "lite" } else { "full" }
-$zipName = "SurvivalLog.Mods-$Version-$edition.zip"
+$zipName = "Survival.Butler-$Version-$edition.zip"
 $zipPath = Join-Path $OutputDir $zipName
 
 # Compress-Archive 在 PowerShell 5.1 下写反斜杠条目名，这里用自建条目（见 New-ZipFromDirectory）
@@ -471,7 +471,7 @@ try {
     if (-not ($names -contains "安装说明.txt")) { $fail.Add("缺少 安装说明.txt") }
 
     if ($Lite) {
-        if (-not ($names -contains "BepInEx/plugins/SurvivalLog.Mods.dll")) { $fail.Add("缺少插件 DLL") }
+        if (-not ($names -contains "BepInEx/plugins/SurvivalLog.Butler.dll")) { $fail.Add("缺少插件 DLL") }
     }
     else {
         # 完整包里，基底文件位于 HomeButler-<ver>-Package/payload/ 下，
@@ -489,7 +489,7 @@ try {
             "BepInEx/plugins/BaseButler.ContainerNavigation.dll",
             "BepInEx/plugins/BaseButler.ContainerInlineEditor.dll",
             "BepInEx/plugins/BaseButler.NativeCompatibility.dll",
-            "BepInEx/plugins/SurvivalLog.Mods.dll"
+            "BepInEx/plugins/SurvivalLog.Butler.dll"
         )
         foreach ($r in $required) {
             if (-not ($names -contains ($prefix + $r))) { $fail.Add("缺少必需文件: $prefix$r") }
@@ -505,9 +505,9 @@ try {
         # manifest 与实体文件一致性
         $mPath = Join-Path $pkgDir.FullName "manifest.json"
         $m = Get-Content $mPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $t = @($m.Payload) | Where-Object { $_.Target -eq "BepInEx\plugins\SurvivalLog.Mods.dll" }
+        $t = @($m.Payload) | Where-Object { $_.Target -eq "BepInEx\plugins\SurvivalLog.Butler.dll" }
         if (-not $t) { $fail.Add("manifest 的 Payload 未登记插件") }
-        $pf = @($m.PackageFiles) | Where-Object { $_.Path -eq "payload/BepInEx/plugins/SurvivalLog.Mods.dll" }
+        $pf = @($m.PackageFiles) | Where-Object { $_.Path -eq "payload/BepInEx/plugins/SurvivalLog.Butler.dll" }
         if (-not $pf) { $fail.Add("manifest 的 PackageFiles 未登记插件") }
         elseif ($pf.SHA256.ToUpperInvariant() -ne $dllHash) { $fail.Add("manifest 记录的 DLL 哈希与实际不符") }
 

@@ -8,7 +8,7 @@ using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
-using SurvivalLog.Mods;
+using SurvivalLog.Butler;
 using GameCore.HotUpdate;
 using GameCore.HotUpdate.Battle.Show;
 using GameCore.HotUpdate.Battle.Logic;

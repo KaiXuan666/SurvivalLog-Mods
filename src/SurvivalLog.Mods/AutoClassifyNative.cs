@@ -8,7 +8,7 @@ using GameCore.HotUpdate.ReduxUI;
 using HarmonyLib;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
-using SurvivalLog.Mods;
+using SurvivalLog.Butler;
 
 internal static class AutoClassifyNative
 {

@@ -6,7 +6,7 @@ using GameCore.HotUpdate.ReduxUI;
 using HarmonyLib;
 using UnityEngine;
 
-namespace SurvivalLog.Mods
+namespace SurvivalLog.Butler
 {
     // 制作台「右键只看不造」。
     //

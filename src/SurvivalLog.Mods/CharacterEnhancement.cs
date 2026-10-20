@@ -5,7 +5,7 @@ using GameCore.HotUpdate;
 using GameCore.HotUpdate.Battle.Logic;
 using HarmonyLib;
 
-namespace SurvivalLog.Mods
+namespace SurvivalLog.Butler
 {
     internal static class CharacterEnhancement
     {
