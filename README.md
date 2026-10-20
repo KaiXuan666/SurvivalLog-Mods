@@ -22,7 +22,7 @@ HomeButler 由原作者 lingxiangtingsheng 创作、维护者 lingbaicat 适配�
 
 | 内容 | 是否收录 | 说明 |
 | --- | --- | --- |
-| `source/` 源码 | ✅ 收录 | 经权利人授权，位于 `third-party/homebutler/source/` |
+| `source/` 源码 | ✅ 收录 | 经原作者 lingxiangtingsheng 与维护者 lingbaicat 许可，位于 `third-party/homebutler/source/` |
 | 上游 README、CHANGELOG | ✅ 收录 | 保留原始说明与变更记录 |
 | 原始许可文本 | ✅ 收录 | [`licenses/HomeButler-LICENSE.md`](licenses/HomeButler-LICENSE.md) |
 | 编译产物（5 个 `BaseButler*.dll`） | ❌ 不收录 | 请从上游获取，或用 [`third-party/HomeButler.json`](third-party/HomeButler.json) 中的 SHA-256 核对本机安装 |

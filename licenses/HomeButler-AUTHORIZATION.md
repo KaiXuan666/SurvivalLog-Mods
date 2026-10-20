@@ -7,13 +7,13 @@
 - 原始 BaseButler 作者：**lingxiangtingsheng**，原作页面 <https://www.nexusmods.com/survivallog/mods/4>
 - 适配整合包维护者：**lingbaicat**，上游仓库 <https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaicat>
 - 上游包的 `manifest.json` 记录 `Authorization: "Maintainer confirms permission obtained for this release"`，即维护者已就其发布取得原作者许可。
-- 本仓库收录 HomeButler 源码：由仓库所有者 **KaiXuan666** 向权利人取得许可后加入，确认时间为 2026-10-20。
+- 本仓库收录 HomeButler 源码：仓库所有者 **KaiXuan666** 已分别取得**原作者 lingxiangtingsheng** 与**维护者 lingbaicat** 的许可，确认时间为 2026-10-20。
 
 ## 收录范围
 
 | 内容 | 状态 |
 | --- | --- |
-| `source/` 源码（`.cs`、`.js`、`.csproj`、测试与校验脚本） | 已收录，用于查阅与维护 |
+| `source/` 源码（`.cs`、`.js`、`.csproj`、测试与校验脚本） | 已收录，用于查阅与维护（原作者与维护者均已许可） |
 | 上游 README、CHANGELOG | 已收录，保留原始说明 |
 | 原始许可文本 | 已收录，见 `HomeButler-LICENSE.md` |
 | 编译产物 `BaseButler*.dll` | 未收录 |

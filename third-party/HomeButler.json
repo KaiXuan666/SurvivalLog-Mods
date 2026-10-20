@@ -7,6 +7,8 @@
   "originalAuthor": "lingxiangtingsheng",
   "originalPage": "https://www.nexusmods.com/survivallog/mods/4",
   "packageMaintainer": "lingbaicat",
+  "authorizedBy": ["lingxiangtingsheng", "lingbaicat"],
+  "authorizationConfirmedAt": "2026-10-20",
   "redistribution": "源码经权利人授权收录于 third-party/homebutler/；编译产物不随仓库分发，请从上游获取。原始条款见 licenses/HomeButler-LICENSE.md，授权依据见 licenses/HomeButler-AUTHORIZATION.md。",
   "sourceIncluded": "third-party/homebutler/source",
   "requiredPluginGuid": "local.survivallog.homeaccess",
