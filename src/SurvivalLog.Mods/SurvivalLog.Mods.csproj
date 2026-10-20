@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>SurvivalLog.Mods</AssemblyName>
+    <RootNamespace>SurvivalLog.Mods</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>10.0</LangVersion>
+    <Version>1.0.0</Version>
+    <Description>生存日志一体化 BepInEx 插件：人物增强 + HomeButler 容器下拉选择、自动归类与制作台配方右键。</Description>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">F:\platform\Steam\steamapps\common\Survival Log</GameDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SurvivalLogModsPlugin.cs" />
+    <Compile Include="ModLog.cs" />
+    <Compile Include="CharacterEnhancement.cs" />
+    <Compile Include="ContainerPicker.cs" />
+    <Compile Include="AutoClassifyNative.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ContainerPicker.js" LogicalName="ContainerPicker.js" />
+    <EmbeddedResource Include="ContainerPickerTabDropBridge.js" LogicalName="ContainerPickerTabDropBridge.js" />
+    <EmbeddedResource Include="AutoClassify.js" LogicalName="AutoClassify.js" />
+    <EmbeddedResource Include="ToolTableRecipeRightClick.js" LogicalName="ToolTableRecipeRightClick.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(GameDir)\BepInEx\core\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(GameDir)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="HotUpdate"><HintPath>$(GameDir)\BepInEx\interop\HotUpdate.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameDir)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

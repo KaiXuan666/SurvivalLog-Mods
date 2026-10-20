@@ -1,0 +1,39 @@
+{
+  "$comment": "HomeButler 为第三方前置依赖，不在本仓库中分发。此文件仅记录本机已安装版本的来源与校验值，用于核对安装是否完整。",
+  "name": "HomeButler (BaseButler 适配整合包)",
+  "version": "2.0.0",
+  "packageTitle": "HomeButler-2.0.0-Package",
+  "upstream": "https://github.com/lingbaicat/SurvivalLog-HomeButler-lingbaica",
+  "originalAuthor": "lingxiangtingsheng",
+  "originalPage": "https://www.nexusmods.com/survivallog/mods/4",
+  "packageMaintainer": "lingbaicat",
+  "redistribution": "不允许。原始授权明确未授予任意修改、商业使用或再分发权，详见 licenses/HomeButler-LICENSE.md。",
+  "requiredPluginGuid": "local.survivallog.homeaccess",
+  "files": [
+    {
+      "path": "BepInEx/plugins/BaseButler.dll",
+      "size": 171008,
+      "sha256": "56bf51e67687c9842ecd1a46ce177db7f7db2c12541cdf92667bd9479fce969a"
+    },
+    {
+      "path": "BepInEx/plugins/BaseButler.HomeAccess.dll",
+      "size": 65536,
+      "sha256": "a7af5046474929687a0a2346354ff5aa150f36a6789212cbac8ab00c0ff1c51f"
+    },
+    {
+      "path": "BepInEx/plugins/BaseButler.ContainerNavigation.dll",
+      "size": 15872,
+      "sha256": "ecb0f5c96b5e63a96b89eb6eb86437402f890c330051df34eff55840e0902ff1"
+    },
+    {
+      "path": "BepInEx/plugins/BaseButler.ContainerInlineEditor.dll",
+      "size": 17920,
+      "sha256": "b1d7a0ba60e50e195bdfb187a3054d97df672e6301cab6a8fd991cbfd2181d66"
+    },
+    {
+      "path": "BepInEx/plugins/BaseButler.NativeCompatibility.dll",
+      "size": 19456,
+      "sha256": "6e66d99014ccdf3ef12271d66d5899b04a244a8a65dcf2493ebb57cb7953320b"
+    }
+  ]
+}

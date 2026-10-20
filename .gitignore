@@ -1,0 +1,31 @@
+# 构建产物
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+
+# 编译后的二进制与符号文件（本仓库只保存源码）
+*.dll
+*.pdb
+*.exe
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# NuGet
+*.nupkg
+packages/
+
+# 系统文件
+Thumbs.db
+desktop.ini
+
+# 游戏目录产物：容器注入前的页面备份与安装状态，均为运行时生成
+**/ContainerPicker-backups/
+**/ContainerInlineEditor-backups/
+install-status.txt
