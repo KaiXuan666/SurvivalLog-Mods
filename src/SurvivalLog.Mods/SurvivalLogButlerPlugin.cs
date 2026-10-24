@@ -22,11 +22,8 @@ namespace SurvivalLog.Butler
 
             var harmony = new Harmony(HarmonyId);
 
-            // 反射入口补丁：自动归类消息回调、主界面模组设置消息回调。
+            // 反射入口补丁：自动归类消息回调、容器改名回调、主界面模组设置消息回调。
             harmony.PatchAll(typeof(SurvivalLogButlerPlugin).Assembly);
-
-            // 场景名称栏：把 HomeButler 的自定义容器名接到长按 Alt 显示的名称上。
-            SceneContainerNames.Install(harmony, Log);
 
             // 人物增强：移动速度与探索暴露度上限按设置里的倍率放大（可在游戏内开关）。
             CharacterEnhancement.Apply(harmony, Log);

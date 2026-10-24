@@ -888,8 +888,6 @@ try {
             "dotnet/coreclr.dll",
             "BepInEx/plugins/BaseButler.dll",
             "BepInEx/plugins/BaseButler.HomeAccess.dll",
-            "BepInEx/plugins/BaseButler.ContainerNavigation.dll",
-            "BepInEx/plugins/BaseButler.ContainerInlineEditor.dll",
             "BepInEx/plugins/BaseButler.NativeCompatibility.dll",
             "BepInEx/plugins/SurvivalLog.Butler.dll"
         )

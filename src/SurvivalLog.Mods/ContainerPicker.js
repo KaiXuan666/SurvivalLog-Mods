@@ -75,11 +75,19 @@
         }
 
         const menu = picker.querySelector('.hb-container-picker-menu');
-        const items = tabs.slice(1).map(tab => ({
-            owner: tab.dataset.hbOwner,
-            label: (tab.textContent || '').trim(),
-            active: tab.classList.contains('active')
-        })).filter(item => item.owner && item.label);
+        const customNames = window.__hbCustomNames || {};
+        const items = tabs.slice(1).map(tab => {
+            const owner = tab.dataset.hbOwner;
+            let label = (tab.textContent || '').trim();
+            if (owner && customNames[owner]) {
+                label = customNames[owner];
+            }
+            return {
+                owner: owner,
+                label: label,
+                active: tab.classList.contains('active')
+            };
+        }).filter(item => item.owner && item.label);
         const key = JSON.stringify(items.map(item => [item.owner, item.label, item.active]));
         if (menu.dataset.key === key) return;
         menu.dataset.key = key;
